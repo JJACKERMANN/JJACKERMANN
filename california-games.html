@@ -475,25 +475,26 @@ function drawHackySack(){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HALF-PIPE  — pendulum physics
+// HALF-PIPE  — L/R pump, U-shaped pipe, real air time off lips
 // ══════════════════════════════════════════════════════════════════════════════
-const PL=44,PR=W-44,PTOP=115,PBOT=H-56;
+const PL=18,PR=W-18,PTOP=42,PBOT=H-12;
 function pipeY(x){
   const nx=(x-PL)/(PR-PL);
-  return PTOP+(PBOT-PTOP)*(1-3.6*(nx-.5)*(nx-.5));
+  const u=2*Math.abs(nx-0.5);             // 0 at centre, 1 at edges
+  return PBOT-(PBOT-PTOP)*Math.pow(u,1.6);// U-shape: steep walls, curved base
 }
 let hp={};
 function initHalfpipe(){
   hp={
-    angle:0.05,angVel:0.04,   // pendulum angle (-1=left top, 0=bottom, +1=right top)
+    angle:0.05,angVel:0.04,
+    inAir:false,airX:0,airY:0,airVX:0,airVY:0,airSpin:0,
     sx:0,sy:0,wheelRot:0,bgScroll:0,
     score:0,timer:60,timerFrac:0,phase:'play',
-    atTop:false,doneTricks:new Set(),
+    airTricks:new Set(),airTrickText:'',airTrickPts:0,
     trickText:'',trickTimer:0,trickPts:0,totalTricks:0,
-    // speedometer
     speedBar:0,
   };
-  hp.sx=W/2;hp.sy=pipeY(hp.sx)-22;
+  hp.sx=W/2;hp.sy=pipeY(hp.sx)-20;
 }
 const HP_TRICKS={
   'KeyA':{name:'GRIND',    pts:200},
@@ -506,125 +507,185 @@ function updateHalfpipe(dt){
   hp.timerFrac+=dt;
   if(hp.timerFrac>=1){hp.timerFrac-=1;hp.timer--;
     if(hp.timer<=0){hp.phase='end';if(hp.score>HS.halfpipe)HS.halfpipe=hp.score;sfx.score();return;}}
-  hp.bgScroll+=Math.abs(hp.angVel)*30;
-  hp.wheelRot+=hp.angVel*8;
-
-  // Pendulum gravity
-  hp.angVel+=-0.055*hp.angle;
-  // Friction
-  hp.angVel*=0.993;
-  // PUMP: press ↓ when near bottom (|angle|<0.22) and in motion
-  const atBottom=Math.abs(hp.angle)<0.22;
-  if(keys['ArrowDown']&&atBottom&&Math.abs(hp.angVel)>0.015){
-    hp.angVel*=1.07;
-    if(Math.abs(hp.angVel)>2.6)hp.angVel=2.6*Math.sign(hp.angVel);
-    hp.speedBar=Math.min(1,hp.speedBar+0.12);
-  }
-  hp.speedBar=Math.max(0,hp.speedBar-dt*0.3);
-  hp.angle+=hp.angVel;
-  // Clamp at ramp edges
-  if(hp.angle>1){hp.angle=1;hp.angVel*=-0.15;}
-  if(hp.angle<-1){hp.angle=-1;hp.angVel*=-0.15;}
-
-  hp.sx=W/2+hp.angle*(PR-PL)/2.05;
-  hp.sy=pipeY(hp.sx)-22;
-  hp.atTop=Math.abs(hp.angle)>0.78;
-  if(!hp.atTop)hp.doneTricks.clear();
   if(hp.trickTimer>0)hp.trickTimer-=dt;
-  if(hp.atTop&&hp.trickTimer<=0){
+  hp.bgScroll+=Math.abs(hp.inAir?hp.airVX:hp.angVel)*30;
+
+  if(hp.inAir){
+    // Gravity
+    hp.airVY+=0.36;
+    hp.airX+=hp.airVX;
+    hp.airY+=hp.airVY;
+    // Passive spin during air
+    hp.airSpin+=hp.airVX*0.03;
+    // Tricks (each trick fires once per air)
     for(const [k,t] of Object.entries(HP_TRICKS)){
-      if(kp[k]&&!hp.doneTricks.has(t.name)){
-        hp.doneTricks.add(t.name);
-        hp.trickText=t.name;
-        hp.trickPts=t.pts*player.bonus('halfpipe')|0;
-        hp.score+=hp.trickPts;hp.totalTricks++;hp.trickTimer=1.4;
-        sfx.score();break;
+      if(kp[k]&&!hp.airTricks.has(t.name)){
+        hp.airTricks.add(t.name);
+        const pts=t.pts*player.bonus('halfpipe')|0;
+        hp.airTrickPts+=pts;
+        hp.airTrickText=hp.airTricks.size>1?hp.airTrickText+' + '+t.name:t.name;
+        hp.trickText=hp.airTrickText;hp.trickPts=hp.airTrickPts;hp.trickTimer=1.6;
+        sfx.score();
       }
     }
+    // Landing: back on pipe surface
+    const clampX=Math.max(PL+8,Math.min(PR-8,hp.airX));
+    const surfY=pipeY(clampX);
+    if(hp.airY>=surfY-20){
+      hp.inAir=false;
+      hp.sx=clampX;hp.sy=surfY-20;
+      const nx=(clampX-W/2)/((PR-PL)/2.0);
+      hp.angle=Math.max(-0.9,Math.min(0.9,nx));
+      // Convert horizontal air velocity back to angular velocity
+      hp.angVel=(hp.airVX>0?1:-1)*Math.min(Math.abs(hp.airVX)*0.12,0.55);
+      hp.wheelRot=0;
+      if(hp.airTrickPts>0){
+        hp.score+=hp.airTrickPts;
+        hp.totalTricks+=hp.airTricks.size;
+      }
+      hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
+    }
+    // Fell off screen — soft reset
+    if(hp.airY>H+60||hp.airX<PL-80||hp.airX>PR+80){
+      hp.inAir=false;hp.angle=0;hp.angVel=0.04;
+      hp.airTricks.clear();hp.airTrickPts=0;
+    }
+    return;
   }
+
+  // ── Ground pendulum ──
+  hp.angVel+=-0.055*hp.angle;   // gravity restoring force
+  hp.angVel*=0.994;             // rolling friction
+  hp.wheelRot+=hp.angVel*8;
+
+  // PUMP: press the direction you are travelling when near the bottom transition
+  const atTransition=Math.abs(hp.angle)<0.32;
+  if(atTransition&&Math.abs(hp.angVel)>0.01){
+    if((hp.angVel<0&&keys['ArrowLeft'])||(hp.angVel>0&&keys['ArrowRight'])){
+      hp.angVel*=1.09;
+      hp.angVel=Math.sign(hp.angVel)*Math.min(Math.abs(hp.angVel),2.9);
+      hp.speedBar=Math.min(1,hp.speedBar+0.10);
+    }
+  }
+  hp.speedBar=Math.max(0,hp.speedBar-dt*0.28);
+  hp.angle+=hp.angVel;
+
+  // Lip check — launch into air if fast enough
+  if(Math.abs(hp.angle)>=0.92){
+    const spd=Math.abs(hp.angVel);
+    if(spd>0.82){
+      const dir=Math.sign(hp.angle);
+      hp.inAir=true;
+      hp.airX=hp.sx;hp.airY=hp.sy;
+      hp.airVX=dir*spd*0.9;
+      hp.airVY=-spd*5.0;
+      hp.airSpin=0;
+      hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
+      hp.angle=dir*0.91;hp.angVel=0;
+    } else {
+      // Not enough speed — bounce off lip
+      hp.angle=Math.sign(hp.angle)*0.94;
+      hp.angVel*=-0.2;
+    }
+  }
+
+  hp.sx=W/2+hp.angle*(PR-PL)/2.0;
+  hp.sy=pipeY(hp.sx)-20;
 }
 function drawHalfpipe(){
-  // Night city
+  // Night city sky
   const sky=ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,'#070018');sky.addColorStop(0.6,'#1a0035');sky.addColorStop(1,'#320008');
+  sky.addColorStop(0,'#070018');sky.addColorStop(0.55,'#1a0035');sky.addColorStop(1,'#320008');
   ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+  // Stars
   ctx.fillStyle='#fff';
-  for(let i=0;i<30;i++){
-    const sx=(i*71+hp.bgScroll*.04)%W,sy=(i*47)%(PTOP-10);
-    ctx.fillRect(sx,sy,i%5===0?2:1,i%5===0?2:1);
+  for(let i=0;i<28;i++){
+    const sx=(i*73+hp.bgScroll*.03)%W,sy=(i*41)%(PTOP-4);
+    ctx.fillRect(sx,sy,i%5===0?2:1,1);
   }
+  // Neon buildings
   const cc=['#ff00ff44','#00ffff44','#ff660044','#00ff0044'];
-  for(let i=0;i<8;i++){
-    const bx=((i*94-hp.bgScroll*.18)%(W+90))-45;
-    const bh=50+(i*43)%90,bw=54;
-    ctx.fillStyle=cc[i%4];ctx.fillRect(bx,PTOP-bh-8,bw,bh);
+  for(let i=0;i<9;i++){
+    const bx=((i*90-hp.bgScroll*.16)%(W+100))-50;
+    const bh=40+(i*37)%65,bw=48;
+    ctx.fillStyle=cc[i%4];ctx.fillRect(bx,PTOP-bh,bw,bh);
     ctx.fillStyle='#ffff0055';
     for(let wr=0;wr<3;wr++)for(let wc=0;wc<Math.floor(bh/14);wc++){
-      if((i+wr+wc)%3!==0)ctx.fillRect(bx+7+wr*14,PTOP-bh-4+wc*14,8,8);}
+      if((i+wr+wc)%3!==0)ctx.fillRect(bx+6+wr*13,PTOP-bh+3+wc*13,7,7);
+    }
   }
-  // Pipe surface
-  ctx.fillStyle='#3a3a3a';
+  // Pipe fill
+  ctx.fillStyle='#2e2e2e';
   ctx.beginPath();ctx.moveTo(PL,PTOP);
   for(let x=PL;x<=PR;x+=2)ctx.lineTo(x,pipeY(x));
   ctx.lineTo(PR,PTOP);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#aaa';ctx.lineWidth=3;
+  // Pipe sheen stripe
+  ctx.strokeStyle='#888';ctx.lineWidth=2;
   ctx.beginPath();ctx.moveTo(PL,PTOP);
   for(let x=PL;x<=PR;x+=2)ctx.lineTo(x,pipeY(x)-2);
   ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;
-  for(let x=PL+40;x<PR;x+=50){ctx.beginPath();ctx.moveTo(x,pipeY(x)-8);ctx.lineTo(x,pipeY(x)+8);ctx.stroke();}
-  ctx.fillStyle='#ccc';ctx.fillRect(PL-5,PTOP-10,17,10);ctx.fillRect(PR-12,PTOP-10,17,10);
+  // Grid lines on surface
+  ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.lineWidth=1;
+  for(let x=PL+55;x<PR;x+=55){
+    ctx.beginPath();ctx.moveTo(x,pipeY(x)-7);ctx.lineTo(x,pipeY(x)+7);ctx.stroke();
+  }
+  // Coping blocks at lips
+  ctx.fillStyle='#bbb';
+  ctx.fillRect(PL-4,PTOP-8,14,8);ctx.fillRect(PR-10,PTOP-8,14,8);
 
-  // Speed bar
-  ctx.fillStyle='#111';ctx.fillRect(W/2-60,PTOP-18,120,10);
+  // Speed bar (top-left)
+  ctx.fillStyle='#111';ctx.fillRect(10,10,90,8);
   ctx.fillStyle=hp.speedBar>0.7?'#ff4400':hp.speedBar>0.4?'#ffaa00':'#00ff88';
-  ctx.fillRect(W/2-60,PTOP-18,120*hp.speedBar,10);
-  ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.strokeRect(W/2-60,PTOP-18,120,10);
-  T('SPEED',W/2,PTOP-20,'#555',5);
+  ctx.fillRect(10,10,90*hp.speedBar,8);
+  ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.strokeRect(10,10,90,8);
+  T('SPEED',55,9,'#555',5);
 
-  // Trick hint at top
-  if(hp.atTop){
-    ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(W/2-195,H-48,390,20);
-    T('A=GRIND   S=360 FLIP   D=KICKFLIP   W=AIR WALK',W/2,H-33,'#ffff00',7);
+  // Trick hint — only while airborne
+  if(hp.inAir){
+    ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(W/2-200,H-46,400,20);
+    T('A=GRIND   S=360 FLIP   D=KICKFLIP   W=AIR WALK',W/2,H-31,'#ffff00',7);
   }
 
-  // Skater
-  const sx=hp.sx,sy=hp.sy;
-  const angle2=Math.atan2(pipeY(sx+6)-pipeY(sx-6),12);
-  ctx.save();ctx.translate(sx,sy);ctx.rotate(angle2);
-  // Board
+  // ── Draw skater ──
+  const sx=hp.inAir?hp.airX:hp.sx;
+  const sy=hp.inAir?hp.airY:hp.sy;
+  const surfAngle=hp.inAir?hp.airSpin:Math.atan2(pipeY(sx+5)-pipeY(sx-5),10);
+  ctx.save();ctx.translate(sx,sy);ctx.rotate(surfAngle);
   const bCol=EQUIP.halfpipe[player.equip.halfpipe].col;
-  ctx.fillStyle=bCol;ctx.fillRect(-20,14,40,7);
-  ctx.fillStyle=bCol+'88';ctx.fillRect(-17,11,34,4);
-  ctx.strokeStyle='#222';ctx.lineWidth=3;
-  [-13,13].forEach(wx=>{
-    ctx.beginPath();ctx.arc(wx,21,5,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle=bCol;ctx.fillRect(-17,12,34,6);
+  ctx.fillStyle=bCol+'88';ctx.fillRect(-14,9,28,4);
+  ctx.strokeStyle='#222';ctx.lineWidth=2;
+  [-10,10].forEach(wx=>{
+    ctx.beginPath();ctx.arc(wx,17,4,0,Math.PI*2);ctx.stroke();
     for(let s=0;s<4;s++){
       const a=s*Math.PI/2+hp.wheelRot;
-      ctx.beginPath();ctx.moveTo(wx,21);ctx.lineTo(wx+Math.cos(a)*4,21+Math.sin(a)*4);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(wx,17);ctx.lineTo(wx+Math.cos(a)*3,17+Math.sin(a)*3);ctx.stroke();
     }
   });
-  ctx.strokeStyle=player.color;ctx.lineWidth=3;
+  ctx.strokeStyle=player.color;ctx.lineWidth=2.5;
   ctx.beginPath();
-  ctx.moveTo(-8,11);ctx.lineTo(-7,-2);ctx.moveTo(8,11);ctx.lineTo(7,-2);
-  ctx.moveTo(-7,-2);ctx.lineTo(0,-16);ctx.lineTo(7,-2);
-  ctx.moveTo(hp.atTop?-22:-14,hp.atTop?-6:-4);ctx.lineTo(0,-14);ctx.lineTo(hp.atTop?22:14,hp.atTop?-6:-4);
+  ctx.moveTo(-6,9);ctx.lineTo(-5,0);
+  ctx.moveTo(6,9);ctx.lineTo(5,0);
+  ctx.moveTo(-5,0);ctx.lineTo(0,-13);ctx.lineTo(5,0);
+  // Arms wider when airborne
+  const aw=hp.inAir?20:13;
+  ctx.moveTo(-aw,-4);ctx.lineTo(0,-12);ctx.lineTo(aw,-4);
   ctx.stroke();
-  ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-24,8,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-21,7,0,Math.PI*2);ctx.fill();
   ctx.restore();
 
   // HUD
-  ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,38);
-  T('SCORE: '+hp.score,14,26,player.color,9,'left');
-  T('TRICKS: '+hp.totalTricks,W/2,26,'#ff00ff',9);
-  T('TIME: '+hp.timer,W-14,26,hp.timer<=10?'#ff3300':'#fff',9,'right');
+  ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,34);
+  T('SCORE: '+hp.score,14,22,player.color,9,'left');
+  T('TRICKS: '+hp.totalTricks,W/2,22,'#ff00ff',9);
+  T('TIME: '+hp.timer,W-14,22,hp.timer<=10?'#ff3300':'#fff',9,'right');
   if(hp.trickTimer>0){
     ctx.globalAlpha=Math.min(1,hp.trickTimer);
-    T(hp.trickText+'!',W/2,H/2-20,'#ffff00',16);
-    T('+'+hp.trickPts+' pts',W/2,H/2+10,'#00ff88',10);
+    T(hp.trickText+'!',W/2,H/2-20,'#ffff00',15);
+    T('+'+hp.trickPts+' pts',W/2,H/2+8,'#00ff88',10);
     ctx.globalAlpha=1;
   }
-  T('↓ PUMP at bottom to gain speed   ESC=Menu',W/2,H-6,'rgba(255,255,255,0.3)',7);
+  if(!hp.inAir)T('← → pump at bottom   build speed to launch   ESC=Menu',W/2,H-5,'rgba(255,255,255,0.28)',6);
   if(hp.phase==='end')drawEnd('SESSION OVER!',hp.score,'TRICKS: '+hp.totalTricks,'#00ffff',HS.halfpipe);
 }
 
