@@ -114,7 +114,7 @@ const sfx={
     }
     // Loop intro while player is still in setup screens
     _introIds.push(setTimeout(()=>{
-      if(state!=='menu'&&!IN_GAME.includes(state)){sfx.intro();}
+      if(!IN_GAME.includes(state)){sfx.intro();}
     },10300));
   },
 };
@@ -332,7 +332,7 @@ function updateEquipment(){
   const key=EQ_ROWS[eqRow],opts=EQUIP[key];
   if(kp['ArrowLeft']) {player.equip[key]=(player.equip[key]-1+opts.length)%opts.length;sfx.tick();}
   if(kp['ArrowRight']){player.equip[key]=(player.equip[key]+1)%opts.length;sfx.tick();}
-  if(kp['Enter']){sfx.stopIntro();state='menu';menuSel=0;sfx.score();}
+  if(kp['Enter']){state='menu';menuSel=0;sfx.score();}
 }
 function drawEquipment(){
   ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
@@ -376,6 +376,7 @@ function updateMenu(){
   if(kp['ArrowUp'])  {menuSel=(menuSel-1+SPORTS.length)%SPORTS.length;sfx.tick();}
   if(kp['ArrowDown']){menuSel=(menuSel+1)%SPORTS.length;sfx.tick();}
   if(kp['Enter']||kp['Space']){
+    sfx.stopIntro();
     state=SPORTS[menuSel].key;
     initGame(state);
     sfx.score();
