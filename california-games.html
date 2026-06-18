@@ -572,35 +572,29 @@ function updateHalfpipe(dt){
   hp.angVel*=0.994;             // rolling friction
   hp.wheelRot+=hp.angVel*8;
 
-  // PUMP: press the direction you are travelling when near the bottom transition
-  const atTransition=Math.abs(hp.angle)<0.32;
-  if(atTransition&&Math.abs(hp.angVel)>0.01){
-    if((hp.angVel<0&&keys['ArrowLeft'])||(hp.angVel>0&&keys['ArrowRight'])){
-      hp.angVel*=1.13;
-      hp.angVel=Math.sign(hp.angVel)*Math.min(Math.abs(hp.angVel),2.9);
-      hp.speedBar=Math.min(1,hp.speedBar+0.10);
-    }
+  // PUMP: press the direction you are travelling at the bottom transition zone
+  // Uses an additive boost so even a small angVel gets a real kick
+  const atTransition=Math.abs(hp.angle)<0.48;
+  if(atTransition&&((hp.angVel<0&&keys['ArrowLeft'])||(hp.angVel>0&&keys['ArrowRight']))){
+    const boost=0.08+Math.abs(hp.angVel)*0.10;
+    hp.angVel+=Math.sign(hp.angVel)*boost;
+    hp.angVel=Math.sign(hp.angVel)*Math.min(Math.abs(hp.angVel),3.4);
+    hp.speedBar=Math.min(1,hp.speedBar+0.12);
   }
   hp.speedBar=Math.max(0,hp.speedBar-dt*0.28);
   hp.angle+=hp.angVel;
 
-  // Lip check — launch into air if fast enough
-  if(Math.abs(hp.angle)>=0.92){
+  // Lip check — any time the skater reaches the lip, launch into air
+  if(Math.abs(hp.angle)>=0.90){
+    const dir=Math.sign(hp.angle);
     const spd=Math.abs(hp.angVel);
-    if(spd>0.50){
-      const dir=Math.sign(hp.angle);
-      hp.inAir=true;
-      hp.airX=hp.sx;hp.airY=hp.sy;
-      hp.airVX=dir*spd*0.9;
-      hp.airVY=-spd*5.0;
-      hp.airSpin=0;hp.airRotAccum=0;hp.air360s=0;
-      hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
-      hp.angle=dir*0.91;hp.angVel=0;
-    } else {
-      // Not enough speed — bounce off lip
-      hp.angle=Math.sign(hp.angle)*0.94;
-      hp.angVel*=-0.2;
-    }
+    hp.inAir=true;
+    hp.airX=hp.sx;hp.airY=hp.sy;
+    hp.airVX=dir*Math.min(spd,0.8)*0.25;  // mostly straight up, not sideways
+    hp.airVY=-(5+spd*8);                   // strong upward launch
+    hp.airSpin=0;hp.airRotAccum=0;hp.air360s=0;
+    hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
+    hp.angle=dir*0.89;hp.angVel=0;
   }
 
   hp.sx=W/2+hp.angle*(PR-PL)/2.0;
@@ -737,22 +731,22 @@ function updateSurfing(dt){
   }
 
   // Dynamic barrel Y (follows wave shape)
-  const tBarY=H*0.42+Math.sin(sf.wt*0.68)*52+Math.sin(sf.wt*1.35)*20;
-  sf.barrelY+=(tBarY-sf.barrelY)*0.04;
+  const tBarY=H*0.42+Math.sin(sf.wt*0.72)*62+Math.sin(sf.wt*1.5)*26;
+  sf.barrelY+=(tBarY-sf.barrelY)*0.055;
   // Dynamic barrel radius (wave opens/closes)
   const tR=50+Math.sin(sf.wt*0.85)*13+Math.sin(sf.wt*2.2)*7;
   sf.barrelR+=(tR-sf.barrelR)*0.05;
 
   // ↑↓ — vertical position on wave face
-  if(keys['ArrowUp'])   sf.surferVY-=210*dt;
-  if(keys['ArrowDown']) sf.surferVY+=210*dt;
+  if(keys['ArrowUp'])   sf.surferVY-=252*dt;
+  if(keys['ArrowDown']) sf.surferVY+=252*dt;
   sf.surferVY*=0.85;
   sf.surferY+=sf.surferVY*dt;
   sf.surferY=Math.max(H*0.1,Math.min(H*0.84,sf.surferY));
 
   // ← = accelerate into barrel  → = ease off
-  if(keys['ArrowLeft'])  sf.rideVX-=0.9*dt;
-  if(keys['ArrowRight']) sf.rideVX+=0.7*dt;
+  if(keys['ArrowLeft'])  sf.rideVX-=1.08*dt;
+  if(keys['ArrowRight']) sf.rideVX+=0.84*dt;
   sf.rideVX*=0.88;
   sf.rideX+=sf.rideVX+0.22*dt;  // wave naturally pushes you forward
   sf.rideX=Math.max(-1.4,Math.min(1.4,sf.rideX));
