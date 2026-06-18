@@ -1341,9 +1341,18 @@ function updateBMX(dt){
   if(keys['ArrowRight'])bm.vx=Math.min(8,bm.vx+.7);
   bm.bx+=bm.vx;bm.camX=bm.bx-160;bm.wheelRot+=bm.vx*.13;
 
-  // SPACE: instant jump on press — no charge needed
+  // SPACE: base jump reduced 30%; full power only by timing the ramp peak (t=0.5)
   if(kp['Space']&&bm.onGround&&!bm.jumped){
-    bm.vy=-14;
+    let jp=9.8; // base (70% of original 14)
+    for(const r of bm.ramps){
+      if(bm.bx>r.x-r.w/2&&bm.bx<r.x+r.w/2){
+        const t=(bm.bx-(r.x-r.w/2))/r.w;
+        const prox=1-Math.abs(t*2-1); // 0 at edges, 1.0 at perfect peak
+        jp=9.8+prox*4.2;             // 9.8 → 14.0
+        break;
+      }
+    }
+    bm.vy=-jp;
     bm.jumped=true;bm.inAir=true;
     bm.airRot=0;bm.flipsScored=0;bm.rotation=0;bm.rotVel=0;bm.flipDir=0;
     sfx.jump();
