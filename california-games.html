@@ -9,6 +9,11 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#000;display:flex;flex-direction:column;align-items:center;
   justify-content:center;min-height:100vh;overflow:hidden;}
+@media(max-width:680px){
+  body{overflow-y:auto;justify-content:flex-start;padding-top:4px;}
+  #wrap{width:100vw !important;border-left:none;border-right:none;}
+  canvas{width:100%;height:auto;}
+}
 #wrap{position:relative;border:3px solid #ff6600;box-shadow:0 0 40px #ff660055;}
 canvas{display:block;image-rendering:pixelated;}
 #crt{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;
@@ -21,6 +26,22 @@ canvas{display:block;image-rendering:pixelated;}
   transform:translateX(-50%);letter-spacing:2px;padding:6px 4px;line-height:1;}
 #ui{color:#333;font-family:'Press Start 2P',monospace;font-size:9px;
   margin-top:6px;text-align:center;}
+/* Touch controls */
+.tcb{display:flex;align-items:center;justify-content:center;
+  width:48px;height:48px;
+  background:rgba(0,0,20,0.58);
+  border:2px solid rgba(255,100,0,0.52);
+  border-radius:10px;color:rgba(255,210,60,0.95);font-size:20px;
+  user-select:none;-webkit-tap-highlight-color:transparent;
+  touch-action:none;cursor:pointer;pointer-events:auto;}
+.tcb.sm{width:42px;height:42px;font-size:9px;font-family:'Press Start 2P',monospace;}
+.tcb.lg{width:66px;height:66px;font-size:24px;border-color:rgba(255,100,0,0.8);}
+.tcb.on{background:rgba(255,100,0,0.42);}
+#tc-dp{position:absolute;left:6px;bottom:8px;display:none;
+  grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px);
+  gap:3px;pointer-events:none;}
+#tc-act{position:absolute;right:6px;bottom:8px;display:none;
+  flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;}
 </style>
 </head>
 <body>
@@ -28,6 +49,18 @@ canvas{display:block;image-rendering:pixelated;}
   <canvas id="c" width="640" height="400"></canvas>
   <div id="crt"></div>
   <input id="ni" type="text" maxlength="10" autocomplete="off" spellcheck="false">
+  <div id="tc-dp">
+    <span></span><button class="tcb" data-key="ArrowUp">↑</button><span></span>
+    <button class="tcb" data-key="ArrowLeft">←</button><span></span><button class="tcb" data-key="ArrowRight">→</button>
+    <span></span><button class="tcb" data-key="ArrowDown">↓</button><span></span>
+  </div>
+  <div id="tc-act">
+    <div style="display:flex;gap:4px;">
+      <button class="tcb sm" data-key="Escape">ESC</button>
+      <button class="tcb sm" data-key="Enter">OK</button>
+    </div>
+    <button class="tcb lg" data-key="Space">◉</button>
+  </div>
 </div>
 <div id="ui">CALIFORNIA GAMES</div>
 <script>
@@ -310,7 +343,7 @@ function updateTitle(){
   if(kp['Enter']||kp['Space']){
     state='profileName';
     ni.style.display='block';
-    ni.style.left=`${W/2}px`;
+    ni.style.left='50%';
     ni.style.top='150px';
     ni.value='';
     setTimeout(()=>ni.focus(),50);
@@ -2072,6 +2105,29 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// ── TOUCH CONTROLS ───────────────────────────────────────────────────────────
+(function(){
+  if(!('ontouchstart' in window)&&!navigator.maxTouchPoints)return;
+  document.getElementById('tc-dp').style.display='grid';
+  document.getElementById('tc-act').style.display='flex';
+  document.querySelectorAll('.tcb[data-key]').forEach(btn=>{
+    const code=btn.dataset.key;
+    btn.addEventListener('touchstart',e=>{
+      e.preventDefault();
+      if(!keys[code])kp[code]=true;
+      keys[code]=true;
+      btn.classList.add('on');
+      ia();
+    },{passive:false});
+    btn.addEventListener('touchend',e=>{
+      e.preventDefault();
+      delete keys[code];
+      btn.classList.remove('on');
+    },{passive:false});
+    btn.addEventListener('touchcancel',()=>{delete keys[code];btn.classList.remove('on');});
+  });
+})();
 </script>
 </body>
 </html>
