@@ -488,8 +488,9 @@ function initHalfpipe(){
   hp={
     angle:0.05,angVel:0.04,
     inAir:false,airX:0,airY:0,airVX:0,airVY:0,airSpin:0,
+    airRotAccum:0,air360s:0,
     sx:0,sy:0,wheelRot:0,bgScroll:0,
-    score:0,timer:60,timerFrac:0,phase:'play',
+    score:0,timer:45,timerFrac:0,phase:'play',
     airTricks:new Set(),airTrickText:'',airTrickPts:0,
     trickText:'',trickTimer:0,trickPts:0,totalTricks:0,
     speedBar:0,
@@ -515,8 +516,21 @@ function updateHalfpipe(dt){
     hp.airVY+=0.36;
     hp.airX+=hp.airVX;
     hp.airY+=hp.airVY;
-    // Passive spin during air
-    hp.airSpin+=hp.airVX*0.03;
+    // ←→ spin control + passive spin from lateral velocity
+    if(keys['ArrowLeft']) hp.airSpin-=0.07;
+    if(keys['ArrowRight'])hp.airSpin+=0.07;
+    hp.airSpin+=hp.airVX*0.02;
+    hp.airSpin*=0.96;
+    hp.airRotAccum+=Math.abs(hp.airSpin);
+    const done360=Math.floor(hp.airRotAccum/(Math.PI*2));
+    if(done360>hp.air360s){
+      hp.air360s=done360;
+      const pts360=280*done360*player.bonus('halfpipe')|0;
+      hp.airTrickPts+=pts360;
+      hp.airTrickText=(done360>1?done360+'× ':'')+'360!';
+      hp.trickText=hp.airTrickText;hp.trickPts=hp.airTrickPts;hp.trickTimer=1.4;
+      sfx.score();
+    }
     // Tricks (each trick fires once per air)
     for(const [k,t] of Object.entries(HP_TRICKS)){
       if(kp[k]&&!hp.airTricks.has(t.name)){
@@ -562,7 +576,7 @@ function updateHalfpipe(dt){
   const atTransition=Math.abs(hp.angle)<0.32;
   if(atTransition&&Math.abs(hp.angVel)>0.01){
     if((hp.angVel<0&&keys['ArrowLeft'])||(hp.angVel>0&&keys['ArrowRight'])){
-      hp.angVel*=1.09;
+      hp.angVel*=1.13;
       hp.angVel=Math.sign(hp.angVel)*Math.min(Math.abs(hp.angVel),2.9);
       hp.speedBar=Math.min(1,hp.speedBar+0.10);
     }
@@ -573,13 +587,13 @@ function updateHalfpipe(dt){
   // Lip check — launch into air if fast enough
   if(Math.abs(hp.angle)>=0.92){
     const spd=Math.abs(hp.angVel);
-    if(spd>0.82){
+    if(spd>0.50){
       const dir=Math.sign(hp.angle);
       hp.inAir=true;
       hp.airX=hp.sx;hp.airY=hp.sy;
       hp.airVX=dir*spd*0.9;
       hp.airVY=-spd*5.0;
-      hp.airSpin=0;
+      hp.airSpin=0;hp.airRotAccum=0;hp.air360s=0;
       hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
       hp.angle=dir*0.91;hp.angVel=0;
     } else {
@@ -690,152 +704,214 @@ function drawHalfpipe(){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SURFING  — improved wave with sweet spot
+// SURFING  — barrel ride: paddle in, time directions to stay in the tube
 // ══════════════════════════════════════════════════════════════════════════════
 let sf={};
 function initSurfing(){
-  sf={sx:155,sy:H/2,angle:0,score:0,timer:60,timerFrac:0,phase:'play',
-    wt:0,waveY:H/2,wipeout:false,wipeTimer:0,
-    trickTimer:0,trickText:'',trickPts:0,combo:0,bgO:0,speed:3,
-    dolphins:[{x:W+80,y:0,ph:0},{x:W+280,y:0,ph:1.5}],
-    birds:[{x:80,y:90,ph:0},{x:260,y:70,ph:.7},{x:450,y:110,ph:1.4}],
-    flashTimer:0,flashCol:'#fff',
-    sweetTimer:0,
+  sf={
+    surferY:H*0.5, surferVY:0,
+    rideX:0.0, rideVX:0.0,          // -1=behind barrel, 0=sweet spot, +1=ahead
+    barrelY:H*0.44, barrelR:52,
+    wt:0, bgScroll:0,
+    cue:null, cueTimer:0, cueInterval:1.8, cueSuccess:false,
+    inBarrel:false, outTimer:0,
+    wipeout:false, wipeTimer:0, wipeX:0, wipeY:0,
+    score:0, timer:45, timerFrac:0, phase:'play',
+    trickText:'', trickTimer:0, combo:0,
+    dolphins:[{x:W+60,y:0,ph:0},{x:W+260,y:0,ph:1.5}],
+    birds:[{x:80,y:55,ph:0},{x:260,y:40,ph:.7},{x:450,y:70,ph:1.4}],
   };
 }
-const SURF_TRICKS={
-  'KeyA':{name:'CUTBACK',  pts:150},
-  'KeyS':{name:'TUBE RIDE',pts:300},
-  'KeyD':{name:'HANG TEN', pts:200},
-  'KeyW':{name:'AERIAL',   pts:400},
-};
 function updateSurfing(dt){
   if(sf.phase==='end'){if(kp['Enter'])state='menu';return;}
   sf.timerFrac+=dt;
   if(sf.timerFrac>=1){sf.timerFrac-=1;sf.timer--;
     if(sf.timer<=0){sf.phase='end';const sc=Math.floor(sf.score);if(sc>HS.surfing)HS.surfing=sc;sfx.score();return;}}
-  sf.wt+=dt;sf.bgO+=sf.speed;
-  if(sf.flashTimer>0)sf.flashTimer-=dt;
-  // Wave: slower, more predictable
-  sf.waveY=H/2+Math.sin(sf.wt*.8)*44+Math.sin(sf.wt*.28)*18;
-
-  if(sf.wipeout){sf.wipeTimer-=dt;if(sf.wipeTimer<=0){sf.wipeout=false;sf.sx=155;sf.combo=0;}return;}
-
-  if(keys['ArrowLeft']) sf.sx=Math.max(28,sf.sx-2);
-  if(keys['ArrowRight'])sf.sx=Math.min(W*.42,sf.sx+2);
-  if(keys['ArrowUp'])   sf.sy=Math.max(65,sf.sy-3.2);
-  if(keys['ArrowDown']) sf.sy=Math.min(H-90,sf.sy+3.2);
-
-  const dist=sf.sy-sf.waveY;
-  sf.angle+=(dist*.016-sf.angle)*.1;
-
-  // Sweet spot: -35 to +35 from wave face
-  const inSweet=Math.abs(dist)<38;
-  // Danger: too far
-  if(Math.abs(dist)>100){sf.wipeout=true;sf.wipeTimer=2;sf.combo=0;sfx.oof();return;}
-
-  if(inSweet){
-    sf.score+=dt*(2.5+sf.combo*.7)*player.bonus('surfing');
-    sf.sweetTimer=Math.min(1,sf.sweetTimer+dt*2);
-  }else{
-    sf.sweetTimer=Math.max(0,sf.sweetTimer-dt);
-  }
-
+  sf.wt+=dt; sf.bgScroll+=3.8;
   if(sf.trickTimer>0)sf.trickTimer-=dt;
-  for(const [k,t] of Object.entries(SURF_TRICKS)){
-    if(kp[k]&&sf.trickTimer<=0){
-      const ok=Math.random()<(1-Math.abs(dist)/90);
-      if(ok){
-        sf.trickText=t.name;sf.trickPts=t.pts*(1+sf.combo)*player.bonus('surfing')|0;
-        sf.score+=sf.trickPts;sf.trickTimer=1.5;sf.combo++;
-        sf.flashTimer=0.15;sf.flashCol='#ffff00';sfx.score();
-      }else{sf.wipeout=true;sf.wipeTimer=2;sf.combo=0;sfx.oof();}
-      break;
-    }
-  }
-  sf.dolphins.forEach(d=>{d.x-=sf.speed+2;d.ph+=dt*3;d.y=H*.72+Math.sin(d.ph)*18;if(d.x<-50)d.x=W+80+Math.random()*200;});
-  sf.birds.forEach(b=>{b.x-=1.6;b.ph+=dt*2.5;b.y=60+Math.sin(b.ph)*20+sf.birds.indexOf(b)*34;if(b.x<-30)b.x=W+Math.random()*100;});
-}
-function drawSurfing(){
-  const ocean=ctx.createLinearGradient(0,0,0,H);
-  ocean.addColorStop(0,'#5cc8f8');ocean.addColorStop(.5,'#4a9eff');ocean.addColorStop(1,'#1a5fcc');
-  ctx.fillStyle=ocean;ctx.fillRect(0,0,W,H);
-  for(let l=3;l>=0;l--){
-    const spd=l*.3+.5,amp=24+l*17,wo=sf.bgO*spd,by=H*.44+l*31;
-    const wc=['#003888','#0055aa','#1177cc','#44aaee'][l];
-    ctx.fillStyle=wc;ctx.beginPath();ctx.moveTo(0,H);
-    for(let x=0;x<=W;x+=5){
-      const y=by+Math.sin((x+wo)*.022)*amp+Math.sin((x+wo)*.055)*(amp*.3);
-      x===0?ctx.lineTo(0,y):ctx.lineTo(x,y);}
-    ctx.lineTo(W,H);ctx.closePath();ctx.fill();
-  }
-
-  // Sweet spot band on wave (visual guide)
-  const mwy=sf.waveY;
-  const sweetA=sf.sweetTimer*.35;
-  ctx.fillStyle=`rgba(100,255,100,${sweetA})`;
-  ctx.beginPath();ctx.moveTo(0,H);
-  for(let x=0;x<=W;x+=3)ctx.lineTo(x,mwy+Math.sin((x*.03)+sf.wt*2)*13-38);
-  for(let x=W;x>=0;x-=3)ctx.lineTo(x,mwy+Math.sin((x*.03)+sf.wt*2)*13+38);
-  ctx.closePath();ctx.fill();
-
-  // Main wave face
-  ctx.fillStyle='rgba(255,255,255,0.32)';
-  ctx.beginPath();ctx.moveTo(0,H);
-  for(let x=0;x<=W;x+=3)ctx.lineTo(x,mwy+Math.sin((x*.03)+sf.wt*2)*13);
-  ctx.lineTo(W,H);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,0.88)';ctx.lineWidth=4;
-  ctx.beginPath();
-  for(let x=0;x<=W;x+=3){const y=mwy+Math.sin((x*.03)+sf.wt*2)*13-4;x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}
-  ctx.stroke();
-
-  sf.dolphins.forEach(d=>{
-    if(d.x<-30||d.x>W+30)return;
-    ctx.fillStyle='#3a7799';ctx.beginPath();ctx.ellipse(d.x,d.y,18,7,Math.sin(d.ph)*.3,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.moveTo(d.x-4,d.y-7);ctx.lineTo(d.x+4,d.y-18);ctx.lineTo(d.x+9,d.y-7);ctx.fill();
-  });
-  sf.birds.forEach(b=>{
-    ctx.strokeStyle='#222';ctx.lineWidth=2;
-    const bw=Math.sin(b.ph)*7;
-    ctx.beginPath();ctx.moveTo(b.x-11,b.y-bw);ctx.lineTo(b.x,b.y);ctx.lineTo(b.x+11,b.y-bw);ctx.stroke();
-  });
-
-  if(sf.flashTimer>0){ctx.fillStyle=sf.flashCol;ctx.globalAlpha=sf.flashTimer*.6;ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;}
 
   if(sf.wipeout){
-    ctx.fillStyle='#fff';
-    for(let i=0;i<10;i++){const a=(i/10)*Math.PI*2,r=15+Math.random()*22;ctx.beginPath();ctx.arc(sf.sx+Math.cos(a)*r,sf.sy+Math.sin(a)*r,4,0,Math.PI*2);ctx.fill();}
-    T('WIPEOUT!',W/2,H/2-18,'#ff2200',16);T('Respawning...',W/2,H/2+12,'#fff',8);
-  }else{
-    const bCol=EQUIP.surfing[player.equip.surfing].col;
-    ctx.save();ctx.translate(sf.sx,sf.sy);ctx.rotate(sf.angle);
-    ctx.fillStyle=bCol;ctx.beginPath();ctx.ellipse(0,14,38,7,0,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,14,38,7,0,0,Math.PI*2);ctx.stroke();
-    ctx.strokeStyle=player.color;ctx.lineWidth=3;
-    ctx.beginPath();
-    ctx.moveTo(-9,8);ctx.lineTo(-7,0);ctx.moveTo(9,8);ctx.lineTo(7,0);
-    ctx.moveTo(0,0);ctx.lineTo(0,-14);
-    ctx.moveTo(-18,-7);ctx.lineTo(0,-11);ctx.lineTo(18,-7);ctx.stroke();
-    ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-22,8,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-
-    // Sweet spot indicator (arrow)
-    const dist=sf.sy-sf.waveY;
-    const distCol=Math.abs(dist)<38?'#00ff88':Math.abs(dist)<70?'#ffaa00':'#ff3300';
-    T(Math.abs(dist)<38?'SWEET SPOT':dist<0?'↓ DROP IN':'↑ PULL BACK',sf.sx,sf.sy-50,distCol,7);
+    sf.wipeTimer-=dt;
+    if(sf.wipeTimer<=0){sf.wipeout=false;sf.surferY=H*0.5;sf.surferVY=0;sf.rideX=0;sf.rideVX=0;sf.outTimer=0;sf.combo=0;}
+    return;
   }
 
-  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,38);
-  T('SCORE: '+Math.floor(sf.score),14,26,player.color,9,'left');
-  T('COMBO \xD7'+sf.combo,W/2,26,'#ffff00',9);
-  T('TIME: '+sf.timer,W-14,26,sf.timer<=10?'#ff3300':'#fff',9,'right');
-  if(sf.trickTimer>0){
-    ctx.globalAlpha=Math.min(1,sf.trickTimer);
-    T(sf.trickText+'!',W/2,H/2-35,'#ffff00',14);
-    T('+'+sf.trickPts+' pts',W/2,H/2-10,'#00ff88',10);
+  // Dynamic barrel Y (follows wave shape)
+  const tBarY=H*0.42+Math.sin(sf.wt*0.68)*52+Math.sin(sf.wt*1.35)*20;
+  sf.barrelY+=(tBarY-sf.barrelY)*0.04;
+  // Dynamic barrel radius (wave opens/closes)
+  const tR=50+Math.sin(sf.wt*0.85)*13+Math.sin(sf.wt*2.2)*7;
+  sf.barrelR+=(tR-sf.barrelR)*0.05;
+
+  // ↑↓ — vertical position on wave face
+  if(keys['ArrowUp'])   sf.surferVY-=210*dt;
+  if(keys['ArrowDown']) sf.surferVY+=210*dt;
+  sf.surferVY*=0.85;
+  sf.surferY+=sf.surferVY*dt;
+  sf.surferY=Math.max(H*0.1,Math.min(H*0.84,sf.surferY));
+
+  // ← = accelerate into barrel  → = ease off
+  if(keys['ArrowLeft'])  sf.rideVX-=0.9*dt;
+  if(keys['ArrowRight']) sf.rideVX+=0.7*dt;
+  sf.rideVX*=0.88;
+  sf.rideX+=sf.rideVX+0.22*dt;  // wave naturally pushes you forward
+  sf.rideX=Math.max(-1.4,Math.min(1.4,sf.rideX));
+
+  // Direction cue system
+  sf.cueInterval-=dt;
+  if(sf.cueInterval<=0&&!sf.cue){
+    const barrelDY=sf.barrelY-sf.surferY;
+    // Cue matches what the surfer actually needs to do
+    if(Math.abs(barrelDY)>20) sf.cue=barrelDY>0?'ArrowDown':'ArrowUp';
+    else sf.cue=sf.rideX<-0.2?'ArrowLeft':'ArrowRight';
+    sf.cueTimer=1.7; sf.cueSuccess=false;
+    sf.cueInterval=1.5+Math.random()*1.4;
+  }
+  if(sf.cue){
+    sf.cueTimer-=dt;
+    if(kp[sf.cue]){
+      sf.cueSuccess=true;
+      const pts=90*(sf.combo+1)*player.bonus('surfing')|0;
+      sf.score+=pts; sf.combo++;
+      sf.trickText=['PUMP!','TOP TURN!','BOTTOM TURN!','SNAP!'][['ArrowLeft','ArrowUp','ArrowDown','ArrowRight'].indexOf(sf.cue)];
+      sf.trickTimer=1.2; sfx.score();
+    }
+    if(sf.cueTimer<=0||sf.cueSuccess){
+      if(!sf.cueSuccess) sf.combo=Math.max(0,sf.combo-1);
+      sf.cue=null;
+    }
+  }
+
+  // In-barrel check
+  const dy=sf.surferY-sf.barrelY;
+  const dx=sf.rideX*75;
+  sf.inBarrel=Math.sqrt(dx*dx+dy*dy)<sf.barrelR*0.88;
+
+  if(sf.inBarrel){
+    sf.score+=22*dt*player.bonus('surfing')*(1+sf.combo*0.28);
+    sf.outTimer=0;
+  } else {
+    sf.outTimer+=dt;
+    if(sf.outTimer>2.8){sf.wipeout=true;sf.wipeTimer=2.2;sf.wipeX=W*0.38+sf.rideX*55;sf.wipeY=sf.surferY;sf.outTimer=0;sfx.oof();}
+  }
+
+  sf.dolphins.forEach(d=>{d.x-=4.2;d.ph+=dt*3;d.y=H*.77+Math.sin(d.ph)*15;if(d.x<-50)d.x=W+60+Math.random()*180;});
+  sf.birds.forEach(b=>{b.x-=2;b.ph+=dt*2.7;b.y=50+Math.sin(b.ph)*17+sf.birds.indexOf(b)*26;if(b.x<-30)b.x=W+Math.random()*110;});
+}
+function drawSurfing(){
+  // Warm tropical sky
+  const sky=ctx.createLinearGradient(0,0,0,H*0.62);
+  sky.addColorStop(0,'#ff6a00');sky.addColorStop(0.4,'#ee3a00');sky.addColorStop(0.8,'#ff9040');sky.addColorStop(1,'#ffd068');
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,H*0.62);
+  // Sun
+  ctx.fillStyle='#ffee8822';ctx.beginPath();ctx.arc(W*0.1,H*0.18,56,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffee44';ctx.beginPath();ctx.arc(W*0.1,H*0.18,20,0,Math.PI*2);ctx.fill();
+  // Birds
+  sf.birds.forEach(b=>{
+    ctx.strokeStyle='#33221199';ctx.lineWidth=1.5;
+    const bw=Math.sin(b.ph)*6;
+    ctx.beginPath();ctx.moveTo(b.x-9,b.y-bw);ctx.lineTo(b.x,b.y);ctx.lineTo(b.x+9,b.y-bw);ctx.stroke();
+  });
+  // Ocean base
+  ctx.fillStyle='#005577';ctx.fillRect(0,H*0.58,W,H*0.42);
+  // Ocean glints
+  for(let i=0;i<10;i++){
+    const gx=((i*91+sf.bgScroll*0.38)%(W+40))-20;
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(gx,H*0.65+((i*53)%70),18+(i%4)*7,2);
+  }
+
+  // ── WAVE BODY ──
+  const bcy=sf.barrelY, bcr=sf.barrelR;
+  ctx.fillStyle='#006688';
+  ctx.beginPath();
+  ctx.moveTo(W,H);ctx.lineTo(W,H*0.06);
+  ctx.bezierCurveTo(W*0.82,H*0.03,W*0.64,bcy-bcr*1.7,W*0.5,bcy-bcr*1.15);
+  ctx.bezierCurveTo(W*0.36,bcy-bcr*0.25,W*0.22,bcy+bcr*0.9,W*0.08,H*0.7);
+  ctx.lineTo(W,H);ctx.closePath();ctx.fill();
+
+  // Wave face lighter overlay
+  ctx.fillStyle='rgba(0,200,255,0.2)';
+  ctx.beginPath();
+  ctx.moveTo(W*0.08,H*0.7);
+  ctx.bezierCurveTo(W*0.22,bcy+bcr*0.9,W*0.36,bcy-bcr*0.25,W*0.5,bcy-bcr*1.15);
+  ctx.bezierCurveTo(W*0.44,bcy-bcr*0.65,W*0.32,bcy+bcr*0.6,W*0.1,H*0.68);
+  ctx.closePath();ctx.fill();
+
+  // Foam lip
+  ctx.strokeStyle='rgba(255,255,255,0.8)';ctx.lineWidth=5;
+  ctx.beginPath();ctx.moveTo(W,H*0.08);
+  ctx.bezierCurveTo(W*0.82,H*0.03,W*0.64,bcy-bcr*1.7,W*0.5,bcy-bcr*1.15);ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.55)';
+  for(let i=0;i<7;i++){
+    const ft=(i/6);
+    const fx=W*0.5+(ft)*(W*0.5);
+    const fy=bcy-bcr*1.15-(ft)*(bcy-bcr*1.15-H*0.08)+Math.sin(sf.wt*2.2+i)*7;
+    ctx.beginPath();ctx.arc(fx,fy,3+i%3*2.5,0,Math.PI*2);ctx.fill();
+  }
+
+  // ── BARREL TUBE ──
+  const barX=W*0.4+sf.rideX*55;
+  const bgr=ctx.createRadialGradient(barX,bcy,0,barX,bcy,bcr);
+  bgr.addColorStop(0,'rgba(0,8,28,0.9)');bgr.addColorStop(0.6,'rgba(0,35,72,0.65)');bgr.addColorStop(1,'rgba(0,90,140,0.12)');
+  ctx.fillStyle=bgr;ctx.beginPath();ctx.ellipse(barX,bcy,bcr*0.72,bcr,0,0,Math.PI*2);ctx.fill();
+  // Ring
+  ctx.strokeStyle=sf.inBarrel?'rgba(0,255,180,0.8)':'rgba(255,255,255,0.4)';
+  ctx.lineWidth=sf.inBarrel?3.5:2;
+  ctx.beginPath();ctx.ellipse(barX,bcy,bcr*0.72,bcr,0,0,Math.PI*2);ctx.stroke();
+  if(sf.inBarrel){
+    ctx.strokeStyle='rgba(0,255,180,0.25)';ctx.lineWidth=9;
+    ctx.beginPath();ctx.ellipse(barX,bcy,bcr*0.72+7,bcr+7,0,0,Math.PI*2);ctx.stroke();
+  }
+
+  // ── DIRECTION CUE ──
+  if(sf.cue&&sf.cueTimer>0){
+    const arrowMap={'ArrowLeft':'←','ArrowRight':'→','ArrowUp':'↑','ArrowDown':'↓'};
+    const urgCol=sf.cueTimer<0.55?'#ff3300':sf.cueTimer<1.0?'#ffaa00':'#00ff88';
+    ctx.globalAlpha=Math.min(1,sf.cueTimer*1.6);
+    T(arrowMap[sf.cue],W/2,H*0.28,urgCol,28);
     ctx.globalAlpha=1;
   }
-  T('↑↓←→ RIDE   A=CUTBACK  S=TUBE  D=HANG TEN  W=AERIAL',W/2,H-6,'rgba(255,255,255,0.35)',7);
+
+  // Dolphins
+  sf.dolphins.forEach(d=>{
+    if(d.x<-30||d.x>W+30)return;
+    ctx.fillStyle='#1e5566';ctx.beginPath();ctx.ellipse(d.x,d.y,15,5,Math.sin(d.ph)*0.3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.moveTo(d.x-3,d.y-5);ctx.lineTo(d.x+4,d.y-14);ctx.lineTo(d.x+8,d.y-5);ctx.fill();
+  });
+
+  // ── SURFER ──
+  if(!sf.wipeout){
+    const surX=W*0.38+sf.rideX*55, surY=sf.surferY;
+    const tilt=sf.surferVY*0.004+sf.rideVX*0.28;
+    const bCol=EQUIP.surfing[player.equip.surfing].col;
+    ctx.save();ctx.translate(surX,surY);ctx.rotate(tilt);
+    ctx.fillStyle=bCol;ctx.beginPath();ctx.ellipse(0,11,32,6,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,11,32,6,0,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle=player.color;ctx.lineWidth=2.5;
+    ctx.beginPath();
+    ctx.moveTo(-7,7);ctx.lineTo(-5,0);ctx.moveTo(7,7);ctx.lineTo(5,0);
+    ctx.moveTo(0,0);ctx.lineTo(0,-12);
+    ctx.moveTo(-15,-5);ctx.lineTo(0,-10);ctx.lineTo(15,-5);ctx.stroke();
+    ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-20,7,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // Status hint
+    if(!sf.inBarrel){
+      const hint=sf.outTimer>1.8?'WIPEOUT RISK!':'FIND THE BARREL';
+      const hcol=sf.outTimer>1.8?'#ff3300':'#ffaa00';
+      T(hint,surX,surY-42,hcol,7);
+    }
+  } else {
+    ctx.fillStyle='#fff';
+    for(let i=0;i<12;i++){const a=(i/12)*Math.PI*2+sf.wt*4;const r=10+Math.random()*22;ctx.beginPath();ctx.arc(sf.wipeX+Math.cos(a)*r,sf.wipeY+Math.sin(a)*r,2+Math.random()*3,0,Math.PI*2);ctx.fill();}
+    T('WIPEOUT!',W/2,H/2-14,'#ff2200',16);T('Paddling back...',W/2,H/2+10,'#fff',8);
+  }
+
+  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,34);
+  T('SCORE: '+Math.floor(sf.score),14,22,player.color,9,'left');
+  T('COMBO \xD7'+sf.combo,W/2,22,'#ffff00',9);
+  T('TIME: '+sf.timer,W-14,22,sf.timer<=10?'#ff3300':'#fff',9,'right');
+  if(sf.trickTimer>0){ctx.globalAlpha=Math.min(1,sf.trickTimer);T(sf.trickText+'!',W/2,H/2-28,'#ffff00',14);ctx.globalAlpha=1;}
+  T('↑↓ position on face   ← speed up   → ease off   match the arrow cue!',W/2,H-5,'rgba(255,255,255,0.28)',6);
   if(sf.phase==='end')drawEnd("SURF'S UP!",Math.floor(sf.score),'COMBOS: '+sf.combo,'#44aaff',HS.surfing);
 }
 
