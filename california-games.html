@@ -53,7 +53,9 @@ let _introStarted=false;
 function ia(){
   if(!actx){
     actx=new(window.AudioContext||window.webkitAudioContext)();
-    if(!_introStarted){_introStarted=true;sfx.intro();}
+    // Delay intro so it starts after the current game-loop tick completes
+    // (prevents the title's sfx.stopIntro from cancelling it immediately)
+    if(!_introStarted){_introStarted=true;setTimeout(()=>sfx.intro(),150);}
   }
 }
 function beep(f,d,t='square',v=0.08){
@@ -211,7 +213,6 @@ let menuSel=0,menuTick=0;
 function updateTitle(){
   tick++;
   if(kp['Enter']||kp['Space']){
-    sfx.stopIntro();
     state='profileName';
     ni.style.display='block';
     ni.style.left=`${W/2}px`;
@@ -327,7 +328,7 @@ function updateEquipment(){
   const key=EQ_ROWS[eqRow],opts=EQUIP[key];
   if(kp['ArrowLeft']) {player.equip[key]=(player.equip[key]-1+opts.length)%opts.length;sfx.tick();}
   if(kp['ArrowRight']){player.equip[key]=(player.equip[key]+1)%opts.length;sfx.tick();}
-  if(kp['Enter']){state='menu';menuSel=0;sfx.score();}
+  if(kp['Enter']){sfx.stopIntro();state='menu';menuSel=0;sfx.score();}
 }
 function drawEquipment(){
   ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
