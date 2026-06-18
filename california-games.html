@@ -50,6 +50,7 @@ document.addEventListener('keyup',e=>{keys[e.code]=false;});
 let actx;
 let _introIds=[];
 let _introStarted=false;
+let _introStartTime=0;
 function ia(){
   if(!actx){
     actx=new(window.AudioContext||window.webkitAudioContext)();
@@ -74,9 +75,10 @@ const sfx={
   oof:  ()=>beep(180,0.4,'sawtooth',0.12),
   jump: ()=>beep(380,0.1,'square',0.1),
   sel:  ()=>beep(600,0.07,'square',0.09),
-  stopIntro:()=>{_introIds.forEach(id=>clearTimeout(id));_introIds=[];},
+  stopIntro:()=>{_introIds.forEach(id=>clearTimeout(id));_introIds=[];_introStartTime=0;},
   intro:()=>{
     if(!actx)return;
+    _introStartTime=performance.now();
     // 10-second retro chiptune — melody + bass + hats
     const M=[ // [hz, delay_ms, dur_ms]
       // Fanfare (0-1.8s)
@@ -112,10 +114,6 @@ const sfx={
       _introIds.push(setTimeout(()=>beep(1200+Math.random()*400,0.04,'square',0.025),i*250));
       if(i%2===0)_introIds.push(setTimeout(()=>beep(70,0.12,'sawtooth',0.07),i*500));
     }
-    // Loop intro while player is still in setup screens
-    _introIds.push(setTimeout(()=>{
-      if(!IN_GAME.includes(state)){sfx.intro();}
-    },10300));
   },
 };
 
@@ -1511,6 +1509,7 @@ function loop(ts){
   if(IN_GAME.includes(state)&&kp['Escape']){state='menu';ni.style.display='none';}
   UPDATE[state]?.(dt);
   DRAW[state]?.();
+  if(actx&&_introStartTime>0&&!IN_GAME.includes(state)&&performance.now()-_introStartTime>=10000)sfx.intro();
   for(const k in kp)delete kp[k];
   document.getElementById('ui').textContent=
     state==='menu'?player.name+' • '+player.sponsor.name+' • ↑↓ select  ENTER play':
