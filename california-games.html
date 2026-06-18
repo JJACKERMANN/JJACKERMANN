@@ -842,17 +842,31 @@ function updateBMX(dt){
   if(keys['ArrowRight'])bm.vx=Math.min(8,bm.vx+.7);
   bm.bx+=bm.vx;bm.camX=bm.bx-160;bm.wheelRot+=bm.vx*.13;
 
-  // SPACE: charge & launch
-  if(keys['Space']&&bm.onGround&&!bm.jumped)
-    bm.jumpCharge=Math.min(1,bm.jumpCharge+dt*2.2);
-  if(!keys['Space']&&bm.jumpCharge>0&&bm.onGround){
-    bm.vy=-(9+bm.jumpCharge*10);
-    bm.jumped=true;bm.inAir=true;bm.jumpCharge=0;
+  // SPACE: instant jump on press — no charge needed
+  if(kp['Space']&&bm.onGround&&!bm.jumped){
+    bm.vy=-14;
+    bm.jumped=true;bm.inAir=true;
     bm.airRot=0;bm.flipsScored=0;bm.rotation=0;bm.rotVel=0;bm.flipDir=0;
     sfx.jump();
   }
 
   bm.vy+=0.38;bm.by+=bm.vy;
+
+  // Ramp slope: give an upward kick when riding over the rising half of a ramp
+  if(bm.onGround){
+    const gyAhead=bmxGround(bm.bx+bm.vx*3);
+    const gyCur  =bmxGround(bm.bx);
+    const slopeRise=gyCur-gyAhead; // positive = ground rising ahead
+    if(slopeRise>4&&!bm.jumped){
+      // Natural ramp launch — rider leaves the ramp at the peak
+      const boost=Math.min(slopeRise*0.55,9);
+      bm.vy=-boost;
+      bm.jumped=true;bm.inAir=true;
+      bm.airRot=0;bm.flipsScored=0;bm.rotation=0;bm.rotVel=0;bm.flipDir=0;
+      bm.flipText='LAUNCH!';bm.flipTimer=0.9;
+      sfx.jump();
+    }
+  }
 
   // FLIP: arrow keys only while airborne
   if(bm.inAir){
@@ -886,7 +900,7 @@ function updateBMX(dt){
   const gy=bmxGround(bm.bx);
   if(bm.by>=gy-18){
     if(bm.inAir){
-      // Landing check – crash if mid-flip
+      // Landing check — crash if mid-flip
       const snap=((bm.rotation%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
       const off=Math.min(snap,Math.PI*2-snap);
       if(bm.airRot>Math.PI*.7&&off>1.1){
@@ -897,7 +911,7 @@ function updateBMX(dt){
       bm.inAir=false;bm.airTime=0;bm.doneTricks.clear();bm.jumped=false;
       bm.airRot=0;bm.flipsScored=0;bm.rotation=0;bm.rotVel=0;bm.flipDir=0;
     }
-    bm.by=gy-18;bm.vy=0;bm.onGround=true;bm.jumpCharge=0;
+    bm.by=gy-18;bm.vy=0;bm.onGround=true;
   }else{
     bm.onGround=false;bm.inAir=true;bm.airTime+=dt;bm.score+=dt*4;
   }
