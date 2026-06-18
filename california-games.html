@@ -541,7 +541,10 @@ let hk={};
 function initHackySack(){
   hk={px:W/2,py:H-78,bx:W/2,by:H-130,bvx:1.8,bvy:-4,
     score:0,kicks:0,combo:0,timer:45,timerFrac:0,
-    kickCD:0,trickTimer:0,trickText:'',trickPts:0,phase:'play',bgO:0};
+    kickCD:0,trickTimer:0,trickText:'',trickPts:0,phase:'play',bgO:0,
+    gull:{active:false,x:0,y:0,spd:0,dir:1,spawnT:8,wing:0,hit:false,hitT:0,feathers:[]},
+    drop:{active:false,x:0,y:0,vy:0,pts:0,rot:0},
+    bonusTxt:'',bonusTxtT:0};
 }
 function updateHackySack(dt){
   if(hk.phase==='end'){if(kp['Enter'])state='menu';return;}
@@ -566,6 +569,50 @@ function updateHackySack(dt){
     hk.trickPts=hk.combo*10*player.bonus('hackySack')|0;
     hk.score+=hk.trickPts;hk.trickTimer=1.4;sfx.kick();
   }
+  // ── Seagull ──────────────────────────────────────────────────────────────
+  const g=hk.gull;
+  g.wing+=dt*6;
+  if(g.hit){
+    g.hitT-=dt;
+    g.feathers.forEach(f=>{f.x+=f.vx;f.y+=f.vy;f.vy+=0.15;f.life-=dt;});
+    if(g.hitT<=0){g.active=false;g.spawnT=5+Math.random()*6;}
+  } else if(g.active){
+    g.x+=g.dir*g.spd;
+    const gdx=hk.bx-g.x,gdy=hk.by-g.y;
+    if(Math.sqrt(gdx*gdx+gdy*gdy)<24){
+      g.hit=true;g.hitT=0.7;
+      const difficulty=(45-hk.timer)/45;
+      const pts=Math.floor((80+difficulty*170)*player.bonus('hackySack'));
+      hk.drop={active:true,x:g.x,y:g.y,vy:-1,pts,rot:0};
+      g.feathers=[];
+      for(let i=0;i<8;i++)g.feathers.push({x:g.x,y:g.y,vx:(Math.random()-0.5)*4,vy:Math.random()*-3-1,life:1.2});
+      sfx.score();
+    }
+    if((g.dir>0&&g.x>W+70)||(g.dir<0&&g.x<-70)){g.active=false;g.spawnT=5+Math.random()*7;}
+  } else {
+    g.spawnT-=dt;
+    if(g.spawnT<=0){
+      const difficulty=(45-hk.timer)/45;
+      g.spd=1.5+difficulty*3.5+(Math.random()*0.8);
+      g.dir=Math.random()<0.5?1:-1;
+      g.x=g.dir>0?-60:W+60;
+      g.y=52+Math.random()*80;
+      g.active=true;g.hit=false;g.feathers=[];
+    }
+  }
+  // ── Bonus drop ───────────────────────────────────────────────────────────
+  const db=hk.drop;
+  if(db.active){
+    db.vy+=0.25;db.y+=db.vy;db.rot+=0.1;
+    const bdx=db.x-hk.px,bdy=db.y-(hk.py-20);
+    if(Math.abs(bdx)<32&&Math.abs(bdy)<36){
+      hk.score+=db.pts;
+      hk.bonusTxt='SEAGULL! +'+db.pts;hk.bonusTxtT=2.2;
+      db.active=false;sfx.score();
+    }
+    if(db.y>H-30)db.active=false;
+  }
+  if(hk.bonusTxtT>0)hk.bonusTxtT-=dt;
 }
 function drawHackySack(){
   // Beach sky
@@ -631,6 +678,59 @@ function drawHackySack(){
   ctx.fillStyle='#ff3300';ctx.beginPath();ctx.arc(hk.bx,hk.by,8,0,Math.PI*2);ctx.fill();
   ctx.fillStyle='#ff8800';ctx.beginPath();ctx.arc(hk.bx-2,hk.by-2,4,0,Math.PI*2);ctx.fill();
   ctx.strokeStyle='#880000';ctx.lineWidth=1;ctx.beginPath();ctx.arc(hk.bx,hk.by,8,0,Math.PI*2);ctx.stroke();
+  // Seagull
+  const g=hk.gull;
+  if(g.active){
+    ctx.save();ctx.translate(g.x,g.y);
+    if(g.dir<0)ctx.scale(-1,1);
+    const wf=Math.sin(g.wing)*12;
+    // Body
+    ctx.fillStyle=g.hit?'#ff8800':'#f0f0f0';
+    ctx.strokeStyle=g.hit?'#ff3300':'#aaaaaa';ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(0,0,11,4,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Wings
+    ctx.strokeStyle=g.hit?'#ff5500':'#cccccc';ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.moveTo(-8,-1);ctx.quadraticCurveTo(-18,-10+wf*0.5,-26,-3-wf*0.3);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(8,-1);ctx.quadraticCurveTo(18,-10+wf*0.5,26,-3-wf*0.3);ctx.stroke();
+    // Head & beak
+    ctx.fillStyle='#f0f0f0';ctx.beginPath();ctx.arc(10,-1,4,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#222';ctx.beginPath();ctx.arc(12,-2,1.5,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#e8aa00';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(21,2);ctx.stroke();
+    ctx.restore();
+    // Feathers on hit
+    g.feathers.forEach(f=>{
+      ctx.globalAlpha=Math.max(0,f.life*0.9);
+      ctx.fillStyle='#f0f0f0';ctx.fillRect(f.x-2,f.y-3,4,8);
+    });
+    ctx.globalAlpha=1;
+    // Difficulty "!" indicator
+    if(!g.hit){
+      const lvl=Math.ceil((g.spd-1.5)/3.5*3);
+      T('!'.repeat(Math.max(1,Math.min(3,lvl))),g.x,g.y-22,'#ffff00',8);
+    }
+  }
+  // Bonus drop star
+  const db=hk.drop;
+  if(db.active){
+    ctx.save();ctx.translate(db.x,db.y);ctx.rotate(db.rot);
+    ctx.fillStyle='#ffff00';ctx.strokeStyle='#ff8800';ctx.lineWidth=1.5;
+    ctx.beginPath();
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2-Math.PI/2,ai=a+Math.PI/5;
+      i===0?ctx.moveTo(Math.cos(a)*12,Math.sin(a)*12):ctx.lineTo(Math.cos(a)*12,Math.sin(a)*12);
+      ctx.lineTo(Math.cos(ai)*5,Math.sin(ai)*5);
+    }
+    ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.restore();
+    T('+'+db.pts,db.x,db.y-16,'#ffff00',7);
+  }
+  // Seagull bonus text
+  if(hk.bonusTxtT>0){
+    ctx.globalAlpha=Math.min(1,hk.bonusTxtT*0.9);
+    T(hk.bonusTxt,W/2,H/2-60,'#ff8800',13);
+    ctx.globalAlpha=1;
+  }
   // HUD
   ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,0,W,38);
   T('SCORE: '+hk.score,14,26,player.color,9,'left');
