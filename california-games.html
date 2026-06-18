@@ -48,7 +48,14 @@ document.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 // ── AUDIO ────────────────────────────────────────────────────────────────────
 let actx;
-function ia(){if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();}
+let _introIds=[];
+let _introStarted=false;
+function ia(){
+  if(!actx){
+    actx=new(window.AudioContext||window.webkitAudioContext)();
+    if(!_introStarted){_introStarted=true;sfx.intro();}
+  }
+}
 function beep(f,d,t='square',v=0.08){
   if(!actx)return;
   const o=actx.createOscillator(),g=actx.createGain();
@@ -65,6 +72,45 @@ const sfx={
   oof:  ()=>beep(180,0.4,'sawtooth',0.12),
   jump: ()=>beep(380,0.1,'square',0.1),
   sel:  ()=>beep(600,0.07,'square',0.09),
+  stopIntro:()=>{_introIds.forEach(id=>clearTimeout(id));_introIds=[];},
+  intro:()=>{
+    if(!actx)return;
+    // 10-second retro chiptune — melody + bass + hats
+    const M=[ // [hz, delay_ms, dur_ms]
+      // Fanfare (0-1.8s)
+      [523,0,180],[659,190,180],[784,380,180],[1047,570,400],
+      [880,980,180],[784,1160,180],[659,1340,350],
+      // Theme A (1.8-5s)
+      [523,1800,160],[659,1960,160],[784,2120,160],[880,2280,160],
+      [784,2440,160],[659,2600,160],[523,2760,320],
+      [587,3100,160],[659,3260,160],[784,3420,160],[880,3580,160],
+      [784,3740,160],[659,3900,160],[784,4060,320],
+      // Theme B (5-7.5s)
+      [880,4500,160],[1047,4660,160],[880,4820,160],[784,4980,160],
+      [659,5140,160],[523,5300,160],[659,5460,320],
+      [784,5900,160],[659,6060,160],[523,6220,160],[392,6380,160],
+      [523,6540,160],[659,6700,160],[784,6860,320],
+      // Ending run + chord (7.5-10s)
+      [523,7350,100],[587,7450,100],[659,7550,100],[784,7650,100],
+      [880,7750,100],[1047,7850,100],[880,7950,100],[784,8050,100],
+      [659,8200,100],[784,8300,100],[880,8400,100],[1047,8500,100],
+      [523,8700,400],[659,8700,400],[784,8700,400],[1047,8700,400],
+      [523,9200,600],[392,9200,600],[659,9200,600],
+    ];
+    const B=[ // bass
+      [131,0,450],[131,500,450],[196,1000,450],[196,1500,300],
+      [131,1800,950],[174,2750,950],[131,3700,450],[196,4150,950],
+      [131,4500,950],[220,5450,950],[174,6400,450],[196,6850,450],
+      [131,7350,950],[196,8300,400],[131,8700,900],
+    ];
+    M.forEach(([f,t,d])=>_introIds.push(setTimeout(()=>beep(f,d/1000,'square',0.09),t)));
+    B.forEach(([f,t,d])=>_introIds.push(setTimeout(()=>beep(f,d/1000,'triangle',0.06),t)));
+    // Hi-hat (every 250ms) + kick (every 500ms)
+    for(let i=0;i<40;i++){
+      _introIds.push(setTimeout(()=>beep(1200+Math.random()*400,0.04,'square',0.025),i*250));
+      if(i%2===0)_introIds.push(setTimeout(()=>beep(70,0.12,'sawtooth',0.07),i*500));
+    }
+  },
 };
 
 // ── DATA ─────────────────────────────────────────────────────────────────────
@@ -165,6 +211,7 @@ let menuSel=0,menuTick=0;
 function updateTitle(){
   tick++;
   if(kp['Enter']||kp['Space']){
+    sfx.stopIntro();
     state='profileName';
     ni.style.display='block';
     ni.style.left=`${W/2}px`;
@@ -724,20 +771,10 @@ function drawHalfpipe(){
     }
     T('BAILED!',sx,sy-32,'#ff2200',12);
   } else {
-    // Normal skater — board flips visually from boardFlipRot
-    const surfAngle=hp.inAir?(hp.airSpin+hp.boardFlipRot):Math.atan2(pipeY(sx+5)-pipeY(sx-5),10);
-    ctx.save();ctx.translate(sx,sy);ctx.rotate(surfAngle);
-    const bCol=EQUIP.halfpipe[player.equip.halfpipe].col;
-    ctx.fillStyle=bCol;ctx.fillRect(-17,12,34,6);
-    ctx.fillStyle=bCol+'88';ctx.fillRect(-14,9,28,4);
-    ctx.strokeStyle='#222';ctx.lineWidth=2;
-    [-10,10].forEach(wx=>{
-      ctx.beginPath();ctx.arc(wx,17,4,0,Math.PI*2);ctx.stroke();
-      for(let s=0;s<4;s++){
-        const a=s*Math.PI/2+hp.wheelRot;
-        ctx.beginPath();ctx.moveTo(wx,17);ctx.lineTo(wx+Math.cos(a)*3,17+Math.sin(a)*3);ctx.stroke();
-      }
-    });
+    // Body follows airSpin only; board flips independently on boardFlipRot
+    const bodyAngle=hp.inAir?hp.airSpin:Math.atan2(pipeY(sx+5)-pipeY(sx-5),10);
+    ctx.save();ctx.translate(sx,sy);ctx.rotate(bodyAngle);
+    // Body (legs, torso, arms, head)
     ctx.strokeStyle=player.color;ctx.lineWidth=2.5;
     ctx.beginPath();
     ctx.moveTo(-6,9);ctx.lineTo(-5,0);
@@ -747,7 +784,21 @@ function drawHalfpipe(){
     ctx.moveTo(-aw,-4);ctx.lineTo(0,-12);ctx.lineTo(aw,-4);
     ctx.stroke();
     ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-21,7,0,Math.PI*2);ctx.fill();
-    ctx.restore();
+    // Board — rotates around its own centre when flipping
+    const bCol=EQUIP.halfpipe[player.equip.halfpipe].col;
+    ctx.save();ctx.translate(0,14);ctx.rotate(hp.flipInProgress?hp.boardFlipRot:0);
+    ctx.fillStyle=bCol;ctx.fillRect(-17,-2,34,6);
+    ctx.fillStyle=bCol+'88';ctx.fillRect(-14,-5,28,4);
+    ctx.strokeStyle='#222';ctx.lineWidth=2;
+    [-10,10].forEach(wx=>{
+      ctx.beginPath();ctx.arc(wx,4,4,0,Math.PI*2);ctx.stroke();
+      for(let s=0;s<4;s++){
+        const a=s*Math.PI/2+hp.wheelRot;
+        ctx.beginPath();ctx.moveTo(wx,4);ctx.lineTo(wx+Math.cos(a)*3,4+Math.sin(a)*3);ctx.stroke();
+      }
+    });
+    ctx.restore(); // board
+    ctx.restore(); // body
     // Flip progress arc (shows how far through the rotation)
     if(hp.inAir&&hp.flipInProgress){
       const pct=Math.abs(hp.flipRot%(Math.PI*2))/(Math.PI*2);
