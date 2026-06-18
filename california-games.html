@@ -112,6 +112,10 @@ const sfx={
       _introIds.push(setTimeout(()=>beep(1200+Math.random()*400,0.04,'square',0.025),i*250));
       if(i%2===0)_introIds.push(setTimeout(()=>beep(70,0.12,'sawtooth',0.07),i*500));
     }
+    // Loop intro while player is still in setup screens
+    _introIds.push(setTimeout(()=>{
+      if(state!=='menu'&&!IN_GAME.includes(state)){sfx.intro();}
+    },10300));
   },
 };
 
