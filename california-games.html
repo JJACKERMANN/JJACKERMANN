@@ -871,11 +871,11 @@ function updateBMX(dt){
   // FLIP: arrow keys only while airborne
   if(bm.inAir){
     if(keys['ArrowUp']){
-      bm.rotVel=Math.min(0.30,bm.rotVel+0.016);
+      bm.rotVel=Math.min(0.195,bm.rotVel+0.010);
       if(bm.flipDir===0)bm.flipDir=1;
     }
     if(keys['ArrowDown']){
-      bm.rotVel=Math.max(-0.30,bm.rotVel-0.016);
+      bm.rotVel=Math.max(-0.195,bm.rotVel-0.010);
       if(bm.flipDir===0)bm.flipDir=-1;
     }
     bm.rotVel*=0.97;
