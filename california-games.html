@@ -477,7 +477,7 @@ function drawHackySack(){
 // ══════════════════════════════════════════════════════════════════════════════
 // HALF-PIPE  — L/R pump, U-shaped pipe, real air time off lips
 // ══════════════════════════════════════════════════════════════════════════════
-const PL=18,PR=W-18,PTOP=42,PBOT=H-12;
+const PL=18,PR=W-18,PTOP=110,PBOT=H-8;
 function pipeY(x){
   const nx=(x-PL)/(PR-PL);
   const u=2*Math.abs(nx-0.5);             // 0 at centre, 1 at edges
@@ -512,8 +512,8 @@ function updateHalfpipe(dt){
   hp.bgScroll+=Math.abs(hp.inAir?hp.airVX:hp.angVel)*30;
 
   if(hp.inAir){
-    // Gravity
-    hp.airVY+=0.36;
+    // Reduced gravity for visible hang time
+    hp.airVY+=0.22;
     hp.airX+=hp.airVX;
     hp.airY+=hp.airVY;
     // ←→ spin control + passive spin from lateral velocity
@@ -542,10 +542,10 @@ function updateHalfpipe(dt){
         sfx.score();
       }
     }
-    // Landing: back on pipe surface
+    // Landing: only when falling downward AND back on pipe surface
     const clampX=Math.max(PL+8,Math.min(PR-8,hp.airX));
     const surfY=pipeY(clampX);
-    if(hp.airY>=surfY-20){
+    if(hp.airVY>=0&&hp.airY>=surfY-20){
       hp.inAir=false;
       hp.sx=clampX;hp.sy=surfY-20;
       const nx=(clampX-W/2)/((PR-PL)/2.0);
