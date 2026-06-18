@@ -489,10 +489,12 @@ function initHalfpipe(){
     angle:0.05,angVel:0.04,
     inAir:false,airX:0,airY:0,airVX:0,airVY:0,airSpin:0,
     airRotAccum:0,air360s:0,
+    flipInProgress:false,flipRot:0,flipDir:0,flipsCompleted:0,boardFlipRot:0,
+    crashed:false,crashTimer:0,
     sx:0,sy:0,wheelRot:0,bgScroll:0,
     score:0,timer:45,timerFrac:0,phase:'play',
     airTricks:new Set(),airTrickText:'',airTrickPts:0,
-    trickText:'',trickTimer:0,trickPts:0,totalTricks:0,
+    trickText:'',trickTimer:0,trickPts:0,totalTricks:0,combo:0,
     speedBar:0,
   };
   hp.sx=W/2;hp.sy=pipeY(hp.sx)-20;
@@ -511,12 +513,39 @@ function updateHalfpipe(dt){
   if(hp.trickTimer>0)hp.trickTimer-=dt;
   hp.bgScroll+=Math.abs(hp.inAir?hp.airVX:hp.angVel)*30;
 
+  // Crash recovery — skater gets up after wipeout delay
+  if(hp.crashed){
+    hp.crashTimer-=dt;
+    if(hp.crashTimer<=0){hp.crashed=false;hp.angle=0.05;hp.angVel=0.04;}
+    return;
+  }
+
   if(hp.inAir){
     // Reduced gravity for visible hang time
     hp.airVY+=0.22;
     hp.airX+=hp.airVX;
     hp.airY+=hp.airVY;
-    // ←→ spin control + passive spin from lateral velocity
+
+    // SPACE + ↑ = backflip,  SPACE + ↓ = frontflip
+    if(keys['Space']){
+      if(kp['ArrowUp']&&!hp.flipInProgress){hp.flipInProgress=true;hp.flipDir=1;hp.flipRot=0;hp.flipsCompleted=0;}
+      if(kp['ArrowDown']&&!hp.flipInProgress){hp.flipInProgress=true;hp.flipDir=-1;hp.flipRot=0;hp.flipsCompleted=0;}
+    }
+    if(hp.flipInProgress){
+      hp.boardFlipRot+=hp.flipDir*0.21;
+      hp.flipRot+=hp.flipDir*0.21;
+      const flipDone=Math.floor(Math.abs(hp.flipRot)/(Math.PI*2));
+      if(flipDone>hp.flipsCompleted){
+        hp.flipsCompleted=flipDone;
+        const pts=380*flipDone*(1+hp.combo)*player.bonus('halfpipe')|0;
+        hp.airTrickPts+=pts;
+        hp.airTrickText=(flipDone>1?flipDone+'× ':'')+(hp.flipDir>0?'BACKFLIP':'FRONTFLIP');
+        hp.trickText=hp.airTrickText;hp.trickPts=hp.airTrickPts;hp.trickTimer=1.5;
+        sfx.score();
+      }
+    }
+
+    // ←→ body spin (360s)
     if(keys['ArrowLeft']) hp.airSpin-=0.07;
     if(keys['ArrowRight'])hp.airSpin+=0.07;
     hp.airSpin+=hp.airVX*0.02;
@@ -531,7 +560,7 @@ function updateHalfpipe(dt){
       hp.trickText=hp.airTrickText;hp.trickPts=hp.airTrickPts;hp.trickTimer=1.4;
       sfx.score();
     }
-    // Tricks (each trick fires once per air)
+    // A/S/D/W grab tricks (each fires once per air)
     for(const [k,t] of Object.entries(HP_TRICKS)){
       if(kp[k]&&!hp.airTricks.has(t.name)){
         hp.airTricks.add(t.name);
@@ -542,27 +571,43 @@ function updateHalfpipe(dt){
         sfx.score();
       }
     }
+
     // Landing: only when falling downward AND back on pipe surface
     const clampX=Math.max(PL+8,Math.min(PR-8,hp.airX));
     const surfY=pipeY(clampX);
     if(hp.airVY>=0&&hp.airY>=surfY-20){
-      hp.inAir=false;
-      hp.sx=clampX;hp.sy=surfY-20;
-      const nx=(clampX-W/2)/((PR-PL)/2.0);
-      hp.angle=Math.max(-0.9,Math.min(0.9,nx));
-      // Convert horizontal air velocity back to angular velocity
-      hp.angVel=(hp.airVX>0?1:-1)*Math.min(Math.abs(hp.airVX)*0.12,0.55);
-      hp.wheelRot=0;
-      if(hp.airTrickPts>0){
-        hp.score+=hp.airTrickPts;
-        hp.totalTricks+=hp.airTricks.size;
+      // Crash if flip was started but not completed (>30% through a rotation)
+      const badLand=hp.flipInProgress&&hp.flipsCompleted===0&&Math.abs(hp.flipRot%(Math.PI*2))>Math.PI*0.3;
+      if(badLand){
+        hp.inAir=false;hp.crashed=true;hp.crashTimer=1.8;
+        hp.sx=clampX;hp.sy=surfY-20;
+        hp.angle=Math.max(-0.85,Math.min(0.85,(clampX-W/2)/((PR-PL)/2.0)));
+        hp.angVel=0;
+        hp.score=Math.max(0,hp.score-150);
+        hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
+        hp.flipInProgress=false;hp.flipRot=0;hp.boardFlipRot=0;hp.flipsCompleted=0;
+        sfx.oof();
+      } else {
+        hp.inAir=false;
+        hp.sx=clampX;hp.sy=surfY-20;
+        const nx=(clampX-W/2)/((PR-PL)/2.0);
+        hp.angle=Math.max(-0.9,Math.min(0.9,nx));
+        hp.angVel=(hp.airVX>0?1:-1)*Math.min(Math.abs(hp.airVX)*0.12,0.55);
+        hp.wheelRot=0;
+        if(hp.airTrickPts>0){
+          hp.score+=hp.airTrickPts;
+          hp.totalTricks+=hp.airTricks.size+(hp.flipsCompleted>0?hp.flipsCompleted:0);
+          hp.combo++;
+        }
+        hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
+        hp.flipInProgress=false;hp.flipRot=0;hp.boardFlipRot=0;hp.flipsCompleted=0;
       }
-      hp.airTricks.clear();hp.airTrickPts=0;hp.airTrickText='';
     }
     // Fell off screen — soft reset
     if(hp.airY>H+60||hp.airX<PL-80||hp.airX>PR+80){
       hp.inAir=false;hp.angle=0;hp.angVel=0.04;
       hp.airTricks.clear();hp.airTrickPts=0;
+      hp.flipInProgress=false;hp.flipRot=0;hp.boardFlipRot=0;
     }
     return;
   }
@@ -648,39 +693,69 @@ function drawHalfpipe(){
   ctx.strokeStyle='#444';ctx.lineWidth=1;ctx.strokeRect(10,10,90,8);
   T('SPEED',55,9,'#555',5);
 
-  // Trick hint — only while airborne
+  // Hint bar
   if(hp.inAir){
-    ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(W/2-200,H-46,400,20);
-    T('A=GRIND   S=360 FLIP   D=KICKFLIP   W=AIR WALK',W/2,H-31,'#ffff00',7);
+    ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(W/2-240,H-46,480,20);
+    if(hp.flipInProgress)T('COMPLETE THE FLIP! (land halfway = CRASH)',W/2,H-31,'#ff6600',7);
+    else T('SPACE+↑ BACKFLIP   SPACE+↓ FRONTFLIP   ←→ SPIN   A/S/D/W GRAB',W/2,H-31,'#ffff00',7);
   }
 
   // ── Draw skater ──
-  const sx=hp.inAir?hp.airX:hp.sx;
-  const sy=hp.inAir?hp.airY:hp.sy;
-  const surfAngle=hp.inAir?hp.airSpin:Math.atan2(pipeY(sx+5)-pipeY(sx-5),10);
-  ctx.save();ctx.translate(sx,sy);ctx.rotate(surfAngle);
-  const bCol=EQUIP.halfpipe[player.equip.halfpipe].col;
-  ctx.fillStyle=bCol;ctx.fillRect(-17,12,34,6);
-  ctx.fillStyle=bCol+'88';ctx.fillRect(-14,9,28,4);
-  ctx.strokeStyle='#222';ctx.lineWidth=2;
-  [-10,10].forEach(wx=>{
-    ctx.beginPath();ctx.arc(wx,17,4,0,Math.PI*2);ctx.stroke();
-    for(let s=0;s<4;s++){
-      const a=s*Math.PI/2+hp.wheelRot;
-      ctx.beginPath();ctx.moveTo(wx,17);ctx.lineTo(wx+Math.cos(a)*3,17+Math.sin(a)*3);ctx.stroke();
+  const sx=hp.crashed?hp.sx:hp.inAir?hp.airX:hp.sx;
+  const sy=hp.crashed?hp.sy:hp.inAir?hp.airY:hp.sy;
+
+  if(hp.crashed){
+    // Crash: skater sprawled sideways with dizziness stars
+    ctx.save();ctx.translate(sx,sy+8);
+    ctx.rotate(Math.PI*0.55);  // tipped over
+    const bColC=EQUIP.halfpipe[player.equip.halfpipe].col;
+    ctx.fillStyle=bColC;ctx.fillRect(-17,10,34,6);
+    ctx.strokeStyle=player.color;ctx.lineWidth=2.5;
+    ctx.beginPath();
+    ctx.moveTo(-6,8);ctx.lineTo(0,-4);ctx.lineTo(6,8);
+    ctx.moveTo(-14,-2);ctx.lineTo(0,-10);ctx.lineTo(14,-2);ctx.stroke();
+    ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-18,7,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // Dizzy stars
+    for(let i=0;i<6;i++){
+      const a=(i/6)*Math.PI*2+hp.crashTimer*10;
+      ctx.fillStyle=i%2===0?'#ffff00':'#ff6600';
+      ctx.fillRect(sx+Math.cos(a)*16-2,sy-14+Math.sin(a)*10-2,4,4);
     }
-  });
-  ctx.strokeStyle=player.color;ctx.lineWidth=2.5;
-  ctx.beginPath();
-  ctx.moveTo(-6,9);ctx.lineTo(-5,0);
-  ctx.moveTo(6,9);ctx.lineTo(5,0);
-  ctx.moveTo(-5,0);ctx.lineTo(0,-13);ctx.lineTo(5,0);
-  // Arms wider when airborne
-  const aw=hp.inAir?20:13;
-  ctx.moveTo(-aw,-4);ctx.lineTo(0,-12);ctx.lineTo(aw,-4);
-  ctx.stroke();
-  ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-21,7,0,Math.PI*2);ctx.fill();
-  ctx.restore();
+    T('BAILED!',sx,sy-32,'#ff2200',12);
+  } else {
+    // Normal skater — board flips visually from boardFlipRot
+    const surfAngle=hp.inAir?(hp.airSpin+hp.boardFlipRot):Math.atan2(pipeY(sx+5)-pipeY(sx-5),10);
+    ctx.save();ctx.translate(sx,sy);ctx.rotate(surfAngle);
+    const bCol=EQUIP.halfpipe[player.equip.halfpipe].col;
+    ctx.fillStyle=bCol;ctx.fillRect(-17,12,34,6);
+    ctx.fillStyle=bCol+'88';ctx.fillRect(-14,9,28,4);
+    ctx.strokeStyle='#222';ctx.lineWidth=2;
+    [-10,10].forEach(wx=>{
+      ctx.beginPath();ctx.arc(wx,17,4,0,Math.PI*2);ctx.stroke();
+      for(let s=0;s<4;s++){
+        const a=s*Math.PI/2+hp.wheelRot;
+        ctx.beginPath();ctx.moveTo(wx,17);ctx.lineTo(wx+Math.cos(a)*3,17+Math.sin(a)*3);ctx.stroke();
+      }
+    });
+    ctx.strokeStyle=player.color;ctx.lineWidth=2.5;
+    ctx.beginPath();
+    ctx.moveTo(-6,9);ctx.lineTo(-5,0);
+    ctx.moveTo(6,9);ctx.lineTo(5,0);
+    ctx.moveTo(-5,0);ctx.lineTo(0,-13);ctx.lineTo(5,0);
+    const aw=hp.inAir?20:13;
+    ctx.moveTo(-aw,-4);ctx.lineTo(0,-12);ctx.lineTo(aw,-4);
+    ctx.stroke();
+    ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,-21,7,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // Flip progress arc (shows how far through the rotation)
+    if(hp.inAir&&hp.flipInProgress){
+      const pct=Math.abs(hp.flipRot%(Math.PI*2))/(Math.PI*2);
+      const arcCol=pct>0.75?'#00ff88':pct>0.4?'#ffaa00':'#ff3300';
+      ctx.strokeStyle=arcCol;ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(sx,sy-28,12,-(Math.PI/2),-(Math.PI/2)+pct*Math.PI*2);ctx.stroke();
+    }
+  }
 
   // HUD
   ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,34);
@@ -693,7 +768,7 @@ function drawHalfpipe(){
     T('+'+hp.trickPts+' pts',W/2,H/2+8,'#00ff88',10);
     ctx.globalAlpha=1;
   }
-  if(!hp.inAir)T('← → pump at bottom   build speed to launch   ESC=Menu',W/2,H-5,'rgba(255,255,255,0.28)',6);
+  if(!hp.inAir&&!hp.crashed)T('← → pump at bottom   build speed to launch   ESC=Menu',W/2,H-5,'rgba(255,255,255,0.28)',6);
   if(hp.phase==='end')drawEnd('SESSION OVER!',hp.score,'TRICKS: '+hp.totalTricks,'#00ffff',HS.halfpipe);
 }
 
