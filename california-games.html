@@ -783,25 +783,40 @@ function drawSurfing(){
 // ══════════════════════════════════════════════════════════════════════════════
 let bm={};
 function initBMX(){
+  const TL=25000;
   const ramps=[];
-  for(let i=0;i<7;i++)ramps.push({x:280+i*240,h:35+Math.random()*65,w:70+Math.random()*30});
-  bm={bx:100,by:H-72,vx:5,vy:0,
-    score:0,phase:'play',
+  let rx=320;
+  while(rx<TL-600){
+    const rnd=Math.random();
+    let h,w,type;
+    if(rnd<0.35){h=22+Math.random()*22;w=55+Math.random()*20;type='small';}
+    else if(rnd<0.72){h=52+Math.random()*38;w=82+Math.random()*28;type='med';}
+    else{h=92+Math.random()*52;w=110+Math.random()*42;type='big';}
+    ramps.push({x:rx,h,w,type});
+    rx+=300+Math.random()*260+(type==='big'?220:type==='med'?80:0);
+  }
+  const trees=Array.from({length:Math.floor(TL/90)},(_,i)=>({
+    x:i*90+Math.random()*55,h:30+Math.random()*50,
+    kind:Math.random()>.55?'palm':'pine'}));
+  bm={bx:100,by:H-72,vx:4,vy:0,
+    score:0,phase:'play',elapsed:0,
     onGround:true,inAir:false,airTime:0,
     trickText:'',trickTimer:0,combo:0,totalTricks:0,
-    camX:0,ramps,trackLen:1950,
+    camX:0,ramps,trackLen:TL,trees,
     crashed:false,crashTimer:0,
     jumpCharge:0,jumped:false,
     doneTricks:new Set(),wheelRot:0,
-    bgTrees:Array.from({length:22},(_,i)=>({x:i*110+Math.random()*55,h:35+Math.random()*45})),
-    clouds:Array.from({length:5},(_,i)=>({x:i*160,y:45+Math.random()*45})),
-    chargeBar:0,
+    // flip state
+    rotation:0,rotVel:0,
+    airRot:0,flipDir:0,flipsScored:0,
+    flipText:'',flipTimer:0,
+    clouds:Array.from({length:9},(_,i)=>({x:i*210+Math.random()*100,y:38+Math.random()*52})),
   };
 }
 const BMX_TRICKS={
   'KeyA':{name:'NO HANDER',pts:200},
   'KeyS':{name:'TAILWHIP', pts:300},
-  'KeyD':{name:'360\xB0',     pts:350},
+  'KeyD':{name:'360\xB0',   pts:350},
   'KeyW':{name:'SUPERMAN',  pts:400},
 };
 function bmxGround(x){
@@ -817,46 +832,82 @@ function bmxGround(x){
 function updateBMX(dt){
   if(bm.phase==='end'){if(kp['Enter'])state='menu';return;}
   if(bm.crashed){bm.crashTimer-=dt;
-    if(bm.crashTimer<=0){bm.crashed=false;bm.by=H-72;bm.vy=0;bm.onGround=true;bm.combo=0;}
+    if(bm.crashTimer<=0){
+      bm.crashed=false;bm.by=H-72;bm.vy=0;bm.onGround=true;bm.combo=0;
+      bm.rotation=0;bm.rotVel=0;bm.airRot=0;bm.flipsScored=0;bm.flipDir=0;}
     return;}
 
-  bm.vx=5+bm.totalTricks*.22;
-  if(keys['ArrowRight'])bm.vx+=1.5;
-  if(keys['ArrowLeft'])bm.vx=Math.max(2,bm.vx-1);
-  bm.bx+=bm.vx;bm.camX=bm.bx-150;bm.wheelRot+=bm.vx*.13;
+  bm.elapsed+=dt;
+  bm.vx=Math.min(7, 4+bm.totalTricks*.14);
+  if(keys['ArrowRight'])bm.vx=Math.min(8,bm.vx+.7);
+  bm.bx+=bm.vx;bm.camX=bm.bx-160;bm.wheelRot+=bm.vx*.13;
 
-  // Variable jump: hold SPACE to charge, release to jump
-  if(keys['Space']&&bm.onGround&&!bm.jumped){
+  // SPACE: charge & launch
+  if(keys['Space']&&bm.onGround&&!bm.jumped)
     bm.jumpCharge=Math.min(1,bm.jumpCharge+dt*2.2);
-  }
   if(!keys['Space']&&bm.jumpCharge>0&&bm.onGround){
-    bm.vy=-(8+bm.jumpCharge*9);
-    bm.jumped=true;bm.inAir=true;bm.jumpCharge=0;sfx.jump();
-  }
-  // Also allow ArrowUp for instant jump
-  if(kp['ArrowUp']&&bm.onGround&&!bm.jumped){
-    bm.vy=-13;bm.jumped=true;bm.inAir=true;sfx.jump();
+    bm.vy=-(9+bm.jumpCharge*10);
+    bm.jumped=true;bm.inAir=true;bm.jumpCharge=0;
+    bm.airRot=0;bm.flipsScored=0;bm.rotation=0;bm.rotVel=0;bm.flipDir=0;
+    sfx.jump();
   }
 
   bm.vy+=0.38;bm.by+=bm.vy;
+
+  // FLIP: arrow keys only while airborne
+  if(bm.inAir){
+    if(keys['ArrowUp']){
+      bm.rotVel=Math.min(0.30,bm.rotVel+0.016);
+      if(bm.flipDir===0)bm.flipDir=1;
+    }
+    if(keys['ArrowDown']){
+      bm.rotVel=Math.max(-0.30,bm.rotVel-0.016);
+      if(bm.flipDir===0)bm.flipDir=-1;
+    }
+    bm.rotVel*=0.97;
+    bm.rotation+=bm.rotVel;
+    bm.airRot+=Math.abs(bm.rotVel);
+    const done=Math.floor(bm.airRot/(Math.PI*2));
+    if(done>bm.flipsScored){
+      bm.flipsScored=done;
+      const pts=450*done*(bm.combo+1)*player.bonus('bmx')|0;
+      bm.score+=pts;bm.combo++;bm.totalTricks++;
+      const nm=bm.flipDir>=0?'BACKFLIP':'FRONTFLIP';
+      bm.flipText=done>1?done+'× '+nm+'!':nm+'!';
+      bm.flipTimer=1.8;sfx.score();
+    }
+  }else{
+    bm.rotation*=0.75;
+    bm.rotVel*=0.5;
+  }
+  if(bm.flipTimer>0)bm.flipTimer-=dt;
+
+  // Ground
   const gy=bmxGround(bm.bx);
   if(bm.by>=gy-18){
     if(bm.inAir){
-      if(bm.vy>16){bm.crashed=true;bm.crashTimer=1.5;bm.inAir=false;sfx.oof();return;}
-      if(bm.airTime>.3&&bm.doneTricks.size>0)sfx.score();
+      // Landing check – crash if mid-flip
+      const snap=((bm.rotation%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+      const off=Math.min(snap,Math.PI*2-snap);
+      if(bm.airRot>Math.PI*.7&&off>1.1){
+        bm.crashed=true;bm.crashTimer=1.2;bm.inAir=false;
+        bm.score=Math.max(0,bm.score-200);sfx.oof();return;
+      }
+      if(bm.airTime>.3&&(bm.doneTricks.size>0||bm.flipsScored>0))sfx.score();
       bm.inAir=false;bm.airTime=0;bm.doneTricks.clear();bm.jumped=false;
+      bm.airRot=0;bm.flipsScored=0;bm.rotation=0;bm.rotVel=0;bm.flipDir=0;
     }
     bm.by=gy-18;bm.vy=0;bm.onGround=true;bm.jumpCharge=0;
   }else{
-    bm.onGround=false;bm.inAir=true;bm.airTime+=dt;bm.score+=dt*5;
+    bm.onGround=false;bm.inAir=true;bm.airTime+=dt;bm.score+=dt*4;
   }
 
+  // A/S/D/W tricks
   if(bm.trickTimer>0)bm.trickTimer-=dt;
   if(bm.inAir&&bm.trickTimer<=0){
     for(const [k,t] of Object.entries(BMX_TRICKS)){
       if(kp[k]&&!bm.doneTricks.has(t.name)){
-        bm.doneTricks.add(t.name);
-        bm.trickText=t.name;bm.trickTimer=.55;
+        bm.doneTricks.add(t.name);bm.trickText=t.name;bm.trickTimer=.55;
         const pts=t.pts*(bm.combo+1)*player.bonus('bmx')|0;
         bm.score+=pts;bm.totalTricks++;bm.combo++;sfx.kick();break;
       }
@@ -865,54 +916,71 @@ function updateBMX(dt){
   if(bm.bx>bm.trackLen){bm.phase='end';const sc=Math.floor(bm.score);if(sc>HS.bmx)HS.bmx=sc;sfx.score();}
 }
 function drawBMX(){
+  const prog=Math.min(1,bm.bx/bm.trackLen);
+  // Sky shifts dawn→dusk over the course
   const sky=ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,'#8ad4f0');sky.addColorStop(.65,'#ffe080');sky.addColorStop(1,'#ff9933');
+  if(prog<0.5){
+    sky.addColorStop(0,'#8ad4f0');sky.addColorStop(.65,'#ffe080');sky.addColorStop(1,'#ff9933');
+  }else{
+    sky.addColorStop(0,'#1a2a5e');sky.addColorStop(.55,'#cc4400');sky.addColorStop(1,'#ff6600');
+  }
   ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+
   bm.clouds.forEach(c=>{
-    const cx=(c.x-bm.camX*.25+W*2)%(W+200)-100;
-    ctx.fillStyle='rgba(255,255,255,0.88)';
-    [0,22,44].forEach((d,i)=>{ctx.beginPath();ctx.arc(cx+d,c.y,28-i*4,0,Math.PI*2);ctx.fill();});
+    const cx=((c.x-bm.camX*.16)+W*5)%(W+280)-140;
+    ctx.fillStyle='rgba(255,255,255,0.82)';
+    [0,24,48].forEach((d,i)=>{ctx.beginPath();ctx.arc(cx+d,c.y,27-i*4,0,Math.PI*2);ctx.fill();});
   });
-  bm.bgTrees.forEach(t=>{
-    const tx=t.x-bm.camX*.65;
+
+  bm.trees.forEach(t=>{
+    const tx=t.x-bm.camX*.68;
     if(tx<-30||tx>W+30)return;
-    ctx.fillStyle='#7a3e12';ctx.fillRect(tx-5,H-62-t.h,10,t.h);
-    ctx.fillStyle='#2a8a28';
-    ctx.beginPath();ctx.moveTo(tx,H-62-t.h-28);ctx.lineTo(tx-18,H-62-t.h+8);ctx.lineTo(tx+18,H-62-t.h+8);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#6a3510';ctx.fillRect(tx-4,H-62-t.h,8,t.h);
+    if(t.kind==='palm'){
+      ctx.fillStyle='#2d7a1a';
+      [[tx,H-62-t.h,18],[tx-13,H-62-t.h-4,12],[tx+13,H-62-t.h-4,12]].forEach(([x,y,r])=>{ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();});
+    }else{
+      ctx.fillStyle='#1e6016';
+      ctx.beginPath();ctx.moveTo(tx,H-62-t.h-26);ctx.lineTo(tx-15,H-62-t.h+8);ctx.lineTo(tx+15,H-62-t.h+8);ctx.closePath();ctx.fill();
+    }
   });
+
   ctx.fillStyle='#7d6340';ctx.fillRect(0,H-62,W,62);
   ctx.fillStyle='#5e4a2a';ctx.fillRect(0,H-62,W,5);
-  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=2;ctx.setLineDash([22,22]);
+  ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=2;ctx.setLineDash([22,22]);
   ctx.beginPath();ctx.moveTo(0,H-30);ctx.lineTo(W,H-30);ctx.stroke();ctx.setLineDash([]);
 
   bm.ramps.forEach(r=>{
     const rx=r.x-bm.camX;
-    if(rx<-130||rx>W+130)return;
-    // Ramp approach indicator
-    if(rx>0&&rx<180&&bm.onGround){
-      ctx.strokeStyle='rgba(255,255,0,0.5)';ctx.lineWidth=1;ctx.setLineDash([5,5]);
+    if(rx<-150||rx>W+150)return;
+    const ahead=rx-(bm.bx-bm.camX);
+    if(r.type==='big'&&ahead>0&&ahead<260&&bm.onGround){
+      ctx.strokeStyle='rgba(255,220,0,0.55)';ctx.lineWidth=1;ctx.setLineDash([5,5]);
       ctx.beginPath();ctx.moveTo(bm.bx-bm.camX,H-62);ctx.lineTo(rx,H-62-r.h);ctx.stroke();ctx.setLineDash([]);
+      T('BIG AIR!',rx,H-62-r.h-16,'#ffff00',7);
     }
-    ctx.fillStyle='#bb7733';
+    const rc=r.type==='big'?'#ff8800':r.type==='med'?'#bb7733':'#997755';
+    ctx.fillStyle=rc;
     ctx.beginPath();ctx.moveTo(rx-r.w/2,H-62);ctx.lineTo(rx,H-62-r.h);ctx.lineTo(rx+r.w/2,H-62);ctx.closePath();ctx.fill();
-    ctx.strokeStyle='#995522';ctx.lineWidth=2;
+    ctx.strokeStyle=r.type==='big'?'#ff4400':'#7a5522';ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(rx-r.w/2,H-62);ctx.lineTo(rx,H-62-r.h);ctx.lineTo(rx+r.w/2,H-62);ctx.stroke();
+    if(r.type==='big')T('▲',rx,H-62-r.h-4,'#ff8800',8);
   });
+
   const finX=bm.trackLen-bm.camX;
-  if(finX>-30&&finX<W+30){
-    for(let y=H-130;y<H-62;y+=10)for(let i=0;i<2;i++){
+  if(finX>-30&&finX<W+60){
+    for(let y=H-140;y<H-62;y+=10)for(let i=0;i<2;i++){
       ctx.fillStyle=(Math.floor(y/10)+i)%2===0?'#000':'#fff';ctx.fillRect(finX-10+i*10,y,10,10);}
-    T('FINISH!',finX,H-138,'#000',10);
+    T('FINISH!',finX,H-148,'#000',10);
   }
 
   const bx2=bm.bx-bm.camX,by2=bm.by;
   if(bm.crashed){
-    T('CRASH!',bx2,by2-40,'#ff2200',16);
-    T('★★★',bx2,by2-16,'#ffff00',14);
+    T('CRASH!',bx2,by2-42,'#ff2200',16);
+    T('BAD LANDING!',bx2,by2-18,'#ffaa00',8);
   }else{
-    const spin=bm.inAir&&bm.doneTricks.size>0?Math.sin(bm.airTime*10)*.28:0;
-    ctx.save();ctx.translate(bx2,by2);ctx.rotate(spin);
     const bkCol=EQUIP.bmx[player.equip.bmx].col;
+    ctx.save();ctx.translate(bx2,by2);ctx.rotate(bm.rotation);
     ctx.strokeStyle='#333';ctx.lineWidth=4;
     [-17,17].forEach(wx=>{
       ctx.beginPath();ctx.arc(wx,14,12,0,Math.PI*2);ctx.stroke();
@@ -932,29 +1000,52 @@ function drawBMX(){
     ctx.fillStyle=bkCol;ctx.beginPath();ctx.arc(4,-26,8,Math.PI,0);ctx.fill();
     ctx.restore();
 
-    // Jump charge bar
+    // Charge bar
     if(bm.jumpCharge>0&&bm.onGround){
-      ctx.fillStyle='#111';ctx.fillRect(bx2-30,by2-50,60,10);
+      ctx.fillStyle='#111';ctx.fillRect(bx2-32,by2-52,64,10);
       ctx.fillStyle=bm.jumpCharge>.7?'#ff4400':'#00ff88';
-      ctx.fillRect(bx2-30,by2-50,60*bm.jumpCharge,10);
-      ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.strokeRect(bx2-30,by2-50,60,10);
-      T('CHARGE',bx2,by2-52,'#fff',5);
+      ctx.fillRect(bx2-32,by2-52,64*bm.jumpCharge,10);
+      ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.strokeRect(bx2-32,by2-52,64,10);
+      T('CHARGE',bx2,by2-54,'#fff',5);
+    }
+
+    // Flip progress arc
+    if(bm.inAir&&bm.airRot>0.2){
+      const pct=(bm.airRot/(Math.PI*2))%1;
+      ctx.strokeStyle='rgba(255,255,0,0.75)';ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(bx2,by2-50,16,-Math.PI/2,-Math.PI/2+pct*Math.PI*2);ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(bx2,by2-50,16,0,Math.PI*2);ctx.stroke();
+      // Show flip count inside arc
+      if(bm.flipsScored>0){ctx.font='8px "Press Start 2P",monospace';ctx.textAlign='center';ctx.fillStyle='#ffff00';ctx.fillText(bm.flipsScored,bx2,by2-46);}
     }
   }
 
-  const prog=Math.min(1,bm.bx/bm.trackLen);
-  ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,38);
+  // HUD
+  ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,38);
   T('SCORE: '+Math.floor(bm.score),14,26,player.color,9,'left');
-  T('COMBO \xD7'+bm.combo,W/2,26,'#ffff00',9);
+  const mm=Math.floor(bm.elapsed/60)|0, ss=Math.floor(bm.elapsed%60)|0;
+  T((mm?mm+'m ':'')+ss+'s',W/2,26,'#ffff00',9);
   ctx.fillStyle='#333';ctx.fillRect(W-128,10,108,18);
   ctx.fillStyle='#00dd44';ctx.fillRect(W-128,10,108*prog,18);
   ctx.strokeStyle='#666';ctx.lineWidth=1;ctx.strokeRect(W-128,10,108,18);
   T(Math.floor(prog*100)+'%',W-74,24,'#fff',7);
 
-  if(bm.trickTimer>0)T(bm.trickText+'!',W/2,H/2-28,'#ff00ff',14);
+  if(bm.flipTimer>0){
+    ctx.globalAlpha=Math.min(1,bm.flipTimer*.8);
+    T(bm.flipText,W/2,H/2-36,'#ffff00',14);ctx.globalAlpha=1;
+  }else if(bm.trickTimer>0){
+    T(bm.trickText+'!',W/2,H/2-28,'#ff00ff',12);
+  }
 
-  T('HOLD SPACE=BIG JUMP  ↑=QUICK JUMP  A/S/D/W TRICKS IN AIR',W/2,H-6,'rgba(255,255,255,0.3)',7);
-  if(bm.phase==='end')drawEnd('FINISH LINE!',Math.floor(bm.score),'TRICKS: '+bm.totalTricks,'#ff44aa',HS.bmx);
+  if(bm.inAir){
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(W/2-178,H-44,356,22);
+    T('↑ BACKFLIP   ↓ FRONTFLIP   A/S/D/W TRICKS',W/2,H-28,'#ffff00',7);
+  }else{
+    T('HOLD SPACE = CHARGE JUMP   RELEASE = LAUNCH',W/2,H-6,'rgba(255,255,255,0.28)',7);
+  }
+
+  if(bm.phase==='end')drawEnd('FINISH LINE!',Math.floor(bm.score),'TIME: '+(mm?mm+'m ':'')+ss+'s  TRICKS: '+bm.totalTricks,'#ff44aa',HS.bmx);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
