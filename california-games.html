@@ -2952,7 +2952,7 @@ function initKitesurf(){
     phase:'approach',   // approach | end
     score:0,
     // Kite (angle 0=zenith/12-o'clock, ±90=power zone sides)
-    kiteAng:0,kiteVel:0,kitePow:0,
+    kiteAng:0,kiteVel:0,kitePow:0,kiteHead:0,
     // Board on water
     boardX:85,boardSpd:0,
     // Air state
@@ -2988,6 +2988,9 @@ function updateKitesurf(dt){
   if(keys['ArrowLeft'])  ks.kiteVel-=280*dt;
   if(keys['ArrowRight']) ks.kiteVel+=280*dt;
   ks.kiteVel*=Math.pow(0.87,dt*60);
+  // Visual heading: kite turns the direction it's being steered (capped ±48°)
+  const tHead=Math.max(-48,Math.min(48,ks.kiteVel*0.38));
+  ks.kiteHead+=(tHead-ks.kiteHead)*7*dt;
 
   if(!ks.inAir){
     // ── APPROACH: build speed toward kicker ────────────────────────────────
@@ -3175,14 +3178,29 @@ function drawKitesurf(){
   const kVY=ry-Math.abs(Math.cos(ks.kiteAng*Math.PI/180))*LINE_LEN;
   const kDY=Math.max(30,Math.min(WATER_Y-24,kVY)); // clamp to sky
 
-  // Kite control lines
-  const perpA=(ks.kiteAng+90)*Math.PI/180;
-  const tipS=22;
-  ctx.strokeStyle='rgba(215,215,215,0.42)';ctx.lineWidth=0.8;
-  ctx.beginPath();ctx.moveTo(rx,ry-10);
-  ctx.lineTo(kVX-Math.cos(perpA)*tipS,kDY-Math.sin(perpA)*tipS);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(rx,ry-10);
-  ctx.lineTo(kVX+Math.cos(perpA)*tipS,kDY+Math.sin(perpA)*tipS);ctx.stroke();
+  // ── KITE LINES — 4-line system (2 front to leading edge, 2 back to trailing) ──
+  const KW=28,KH=12;
+  const kHead=ks.kiteHead*Math.PI/180;
+  const ch=Math.cos(kHead),sh=Math.sin(kHead);
+  // Attachment points in kite local frame (nose up = heading 0)
+  // Front lines: clipped to leading edge arch, ~40% half-span each side
+  const FL_l={x:-KW*0.42,y:-KH*0.78};
+  const FR_l={x: KW*0.42,y:-KH*0.78};
+  // Back/steering lines: near wingtips at trailing edge
+  const BL_l={x:-KW*0.85,y: KH*0.16};
+  const BR_l={x: KW*0.85,y: KH*0.16};
+  // Rotate all attachment points into canvas space
+  function rotKPt(p){return{x:kVX+p.x*ch-p.y*sh,y:kDY+p.x*sh+p.y*ch};}
+  const FL=rotKPt(FL_l),FR=rotKPt(FR_l),BL=rotKPt(BL_l),BR=rotKPt(BR_l);
+  const barX=rx,barY=ry-12;
+  // Front lines — brighter (primary load lines)
+  ctx.strokeStyle='rgba(235,235,235,0.60)';ctx.lineWidth=1.0;
+  ctx.beginPath();ctx.moveTo(barX,barY);ctx.lineTo(FL.x,FL.y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(barX,barY);ctx.lineTo(FR.x,FR.y);ctx.stroke();
+  // Back/steering lines — slightly bluer, a touch thinner
+  ctx.strokeStyle='rgba(170,210,245,0.45)';ctx.lineWidth=0.85;
+  ctx.beginPath();ctx.moveTo(barX,barY);ctx.lineTo(BL.x,BL.y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(barX,barY);ctx.lineTo(BR.x,BR.y);ctx.stroke();
 
   // Loop progress arc
   if(ks.inAir&&Math.abs(ks.kiteVel)>20){
@@ -3195,8 +3213,7 @@ function drawKitesurf(){
   // Kite body (LEI bow kite — crescent/arch shape)
   ctx.save();
   ctx.translate(kVX,kDY);
-  ctx.rotate((ks.kiteAng%360)*Math.PI/180*0.28); // subtle rotation feedback
-  const KW=28,KH=12;
+  ctx.rotate(kHead); // kite rotates with steering input
   ctx.fillStyle='#e0105a'; // hot pink kite
   ctx.beginPath();
   ctx.moveTo(-KW,KH*0.25);
