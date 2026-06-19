@@ -2221,9 +2221,10 @@ function updateSnowboard(dt){
     for(const ob of sb.obstacles){
       const sy=ob.wy-sb.worldY+SB_PY;
       if(sy<-30||sy>H+30) continue;
-      if(ob.type==='ramp'&&!sb.inAir){
-        if(Math.abs(sb.px-ob.wx)<ob.w/2&&Math.abs(SB_PY-sy)<ob.h+6){
-          sb.inAir=true;sb.airVH=210+sb.speed*0.38;sb.airH=1;
+      if(ob.type==='ramp'){
+        // Ramps never cause wipeout — always skip crash check
+        if(!sb.inAir&&Math.abs(sb.px-ob.wx)<ob.w/2+12&&Math.abs(SB_PY-sy)<ob.h+22){
+          sb.inAir=true;sb.airVH=300+sb.speed*0.6;sb.airH=1;
           sb.spin=0;sb.spinV=0;sb.tricks360=0;sfx.jump();
         }
         continue;
