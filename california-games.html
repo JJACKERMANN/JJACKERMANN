@@ -282,9 +282,10 @@ const SPORTS=[
   {key:'bmx',      label:'BMX',       col:'#ff44aa'},
   {key:'frisbee',  label:'FRISBEE',   col:'#ffff00'},
   {key:'snowboard',label:'SNOWBOARD', col:'#aaddff'},
+  {key:'kitesurf', label:'KITESURF',  col:'#00ddff'},
 ];
 const _sHS=JSON.parse(localStorage.getItem('cg_hs')||'{}');
-const HS={hackySack:_sHS.hackySack||0,halfpipe:_sHS.halfpipe||0,surfing:_sHS.surfing||0,bmx:_sHS.bmx||0,frisbee:_sHS.frisbee||0,snowboard:_sHS.snowboard||0};
+const HS={hackySack:_sHS.hackySack||0,halfpipe:_sHS.halfpipe||0,surfing:_sHS.surfing||0,bmx:_sHS.bmx||0,frisbee:_sHS.frisbee||0,snowboard:_sHS.snowboard||0,kitesurf:_sHS.kitesurf||0};
 function saveHS(k,s){if(s>HS[k]){HS[k]=Math.floor(s);localStorage.setItem('cg_hs',JSON.stringify(HS));}}
 const player={
   name:'PLAYER',heroIdx:0,sponsorIdx:0,
@@ -2943,6 +2944,373 @@ function drawSnowboard(){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// KITESURF BIG AIR — Table Mountain, Cape Town
+// ══════════════════════════════════════════════════════════════════════════════
+let ks={};
+function initKitesurf(){
+  ks={
+    phase:'approach',   // approach | end
+    score:0,
+    // Kite (angle 0=zenith/12-o'clock, ±90=power zone sides)
+    kiteAng:0,kiteVel:0,kitePow:0,
+    // Board on water
+    boardX:85,boardSpd:0,
+    // Air state
+    inAir:false,
+    airX:0,airY:0,airVX:0,airVY:0,
+    peakH:0,jumpDist:0,
+    // Loop tracking (each 360° rotation = 1 loop)
+    loops:0,loopProg:0,
+    // 3-jump session
+    jumpNum:0,jumpScores:[],
+    endDelay:0,
+    // Jump result overlay
+    resVisible:false,resT:0,resData:null,
+    // Visual
+    wt:0,spray:[],cloudOff:0,
+    kx:420,ky:285,          // kicker canvas position
+  };
+}
+
+function updateKitesurf(dt){
+  if(ks.phase==='end'){
+    if(kp['Enter']){if(careerMode)_crFinishEvent('kitesurf',ks.score);else state='menu';}
+    return;
+  }
+  ks.wt+=dt;
+  ks.cloudOff=(ks.cloudOff+14*dt)%W;
+
+  // Spray particles
+  ks.spray=ks.spray.filter(p=>(p.l-=dt)>0);
+  ks.spray.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=220*dt;});
+
+  // ── KITE STEERING (left/right pivot in wind window) ──────────────────────
+  if(keys['ArrowLeft'])  ks.kiteVel-=280*dt;
+  if(keys['ArrowRight']) ks.kiteVel+=280*dt;
+  ks.kiteVel*=Math.pow(0.87,dt*60);
+
+  if(!ks.inAir){
+    // ── APPROACH: build speed toward kicker ────────────────────────────────
+    // Clamp angle to wind window (±90°)
+    ks.kiteAng=Math.max(-90,Math.min(90,ks.kiteAng+ks.kiteVel*dt));
+    // Power = sin of angle; max at ±90° (power zone)
+    const pow=Math.pow(Math.abs(Math.sin(ks.kiteAng*Math.PI/180)),0.5);
+    ks.kitePow+=(pow-ks.kitePow)*5*dt;
+    // Forward pull from kite power
+    const pull=ks.kitePow*300;
+    ks.boardSpd+=(pull-ks.boardSpd)*2.2*dt;
+    ks.boardSpd=Math.max(0,Math.min(300,ks.boardSpd));
+    // Up arrow: edge board hard for extra bite
+    if(keys['ArrowUp'])ks.boardSpd=Math.min(300,ks.boardSpd+58*dt);
+    ks.boardX+=ks.boardSpd*dt;
+    // Spray at speed
+    if(ks.boardSpd>65&&Math.random()<ks.boardSpd*0.003&&ks.jumpNum<3){
+      ks.spray.push({x:ks.boardX,y:ks.ky+5,
+        vx:-(ks.boardSpd*0.35+(Math.random()-0.5)*25),
+        vy:-(Math.random()*70+20),l:0.4+Math.random()*0.3});
+    }
+    // ── KICKER CHECK ───────────────────────────────────────────────────────
+    if(ks.boardX>=ks.kx&&ks.jumpNum<3){
+      if(ks.boardSpd>=55){
+        // LAUNCH
+        ks.inAir=true;
+        ks.airX=ks.kx;ks.airY=0;
+        const hF=keys['ArrowUp']?1.25:1.0;   // up=more height
+        const sF=keys['ArrowDown']?1.18:1.0; // down=more distance
+        ks.airVX=ks.boardSpd*0.28*sF;
+        ks.airVY=ks.boardSpd*0.88*hF;
+        ks.peakH=0;ks.loops=0;ks.loopProg=0;ks.jumpDist=0;
+        sfx.score();
+      } else {
+        // Too slow — wave washes rider back
+        ks.boardX=ks.kx-55;
+        ks.boardSpd=0;
+      }
+    }
+  } else {
+    // ── AIR PHASE: loop the kite for bonus points ───────────────────────────
+    // kiteAng rotates freely; track cumulative rotation for loops
+    const prevAng=ks.kiteAng;
+    ks.kiteAng+=ks.kiteVel*dt;
+    ks.loopProg+=Math.abs(ks.kiteAng-prevAng);
+    if(ks.loopProg>=360){
+      ks.loops++;
+      ks.loopProg-=360;
+      ks.airVY+=88;   // kite loop pulls rider up
+      sfx.tick();
+    }
+    ks.kitePow=Math.min(1,Math.abs(ks.kiteVel)/80);
+    // Physics
+    ks.airVY-=260*dt;
+    ks.airX+=ks.airVX*dt;
+    ks.airY+=ks.airVY*dt;
+    // Down arrow: push nose for extra distance
+    if(keys['ArrowDown'])ks.airVX+=30*dt;
+    if(ks.airY>ks.peakH)ks.peakH=ks.airY;
+    ks.jumpDist=Math.max(0,ks.airX-ks.kx);
+    // ── LANDING ────────────────────────────────────────────────────────────
+    if(ks.airY<=0&&ks.airVY<0){
+      ks.inAir=false;ks.airY=0;
+      const hPts=Math.floor(ks.peakH*0.92);
+      const dPts=Math.floor(ks.jumpDist*0.42);
+      const lPts=ks.loops*150;
+      const jScore=hPts+dPts+lPts;
+      ks.jumpScores.push(jScore);
+      ks.jumpNum++;
+      ks.resVisible=true;ks.resT=3.2;
+      ks.resData={h:Math.round(ks.peakH/4),dist:Math.round(ks.jumpDist/6),
+        loops:ks.loops,score:jScore,jumpN:ks.jumpNum};
+      // Reset approach for next jump
+      ks.boardX=85;ks.boardSpd=0;ks.kiteAng=0;ks.kiteVel=0;ks.kitePow=0;
+      if(ks.jumpNum>=3){
+        ks.score=ks.jumpScores.reduce((a,b)=>a+b,0);
+        saveHS('kitesurf',ks.score);
+        ks.endDelay=3.4;
+      }
+    }
+  }
+  // End delay
+  if(ks.endDelay>0){ks.endDelay-=dt;if(ks.endDelay<=0){ks.phase='end';ks.resVisible=false;}}
+  // Result overlay timer
+  if(ks.resVisible){ks.resT-=dt;if(ks.resT<=0)ks.resVisible=false;}
+}
+
+function drawKitesurf(){
+  const WATER_Y=ks.ky; // 285
+
+  // ── TABLE MOUNTAIN / CAPE TOWN SKY ─────────────────────────────────────────
+  const sky=ctx.createLinearGradient(0,0,0,WATER_Y);
+  sky.addColorStop(0,'#1a7fc4');
+  sky.addColorStop(0.5,'#6ec8e8');
+  sky.addColorStop(1,'#b0dff4');
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,WATER_Y);
+
+  // Tablecloth orographic cloud (rolls over the flat plateau)
+  const co=ks.cloudOff;
+  ctx.save();
+  ctx.globalAlpha=0.48;ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.ellipse(310+(co%60),87,175,11,0,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=0.22;
+  ctx.beginPath();ctx.ellipse(310+(co%60),80,148,5,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  // Far hazy background ridge
+  ctx.fillStyle='#6888aa';
+  ctx.beginPath();
+  ctx.moveTo(0,WATER_Y);ctx.lineTo(0,172);ctx.lineTo(45,150);ctx.lineTo(95,155);
+  ctx.lineTo(155,136);ctx.lineTo(240,141);ctx.lineTo(340,136);ctx.lineTo(440,143);
+  ctx.lineTo(530,139);ctx.lineTo(580,150);ctx.lineTo(W,167);ctx.lineTo(W,WATER_Y);
+  ctx.closePath();ctx.fill();
+
+  // Table Mountain main silhouette (dark slate)
+  ctx.fillStyle='#2a3242';
+  ctx.beginPath();
+  ctx.moveTo(0,WATER_Y);
+  ctx.lineTo(0,198);ctx.lineTo(28,180);ctx.lineTo(62,168);ctx.lineTo(90,158);
+  ctx.lineTo(116,102);ctx.lineTo(132,98);ctx.lineTo(148,110); // Devil's Peak
+  ctx.lineTo(162,118);ctx.lineTo(178,110);ctx.lineTo(193,96); // saddle
+  ctx.lineTo(212,91);  // ─ FLAT PLATEAU starts ─
+  ctx.lineTo(432,91);  // ─ FLAT PLATEAU ends ─ (iconic flat top)
+  ctx.lineTo(450,98);ctx.lineTo(462,108);
+  ctx.lineTo(474,101);ctx.lineTo(488,94); // Lion's Head
+  ctx.lineTo(504,108);ctx.lineTo(520,122);ctx.lineTo(545,143);
+  ctx.lineTo(572,168);ctx.lineTo(610,192);ctx.lineTo(W,WATER_Y);
+  ctx.closePath();ctx.fill();
+
+  // Plateau cliff face highlight
+  ctx.fillStyle='#3c4860';
+  ctx.beginPath();
+  ctx.moveTo(212,91);ctx.lineTo(432,91);ctx.lineTo(432,108);
+  ctx.quadraticCurveTo(322,120,212,108);ctx.closePath();ctx.fill();
+
+  // Cape Town city glow at mountain base
+  ctx.save();ctx.globalAlpha=0.14;
+  const cg=ctx.createLinearGradient(110,210,395,210);
+  cg.addColorStop(0,'transparent');cg.addColorStop(0.3,'#ffcc88');
+  cg.addColorStop(0.7,'#ffcc88');cg.addColorStop(1,'transparent');
+  ctx.fillStyle=cg;ctx.fillRect(90,210,320,68);ctx.restore();
+
+  // ── TABLE BAY WATER ──────────────────────────────────────────────────────────
+  const wG=ctx.createLinearGradient(0,WATER_Y,0,H);
+  wG.addColorStop(0,'#1a6080');wG.addColorStop(1,'#0a2f40');
+  ctx.fillStyle=wG;ctx.fillRect(0,WATER_Y,W,H-WATER_Y);
+  // Wave shimmer
+  for(let wi=0;wi<6;wi++){
+    const wx=((ks.wt*40+wi*118)%700)-30;
+    const wy=WATER_Y+6+wi*10+Math.sin(ks.wt*0.8+wi)*4;
+    ctx.save();ctx.globalAlpha=0.1+wi*0.03;
+    ctx.strokeStyle='#8ee4f8';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(wx,wy);ctx.quadraticCurveTo(wx+20,wy-4,wx+40,wy);ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── KICKER (WAVE RAMP) ────────────────────────────────────────────────────
+  const kx=ks.kx,ky=ks.ky;
+  ctx.fillStyle='#1e7aaa';
+  ctx.beginPath();
+  ctx.moveTo(kx-35,ky+14);
+  ctx.quadraticCurveTo(kx-18,ky-10,kx,ky-24);
+  ctx.quadraticCurveTo(kx+12,ky-30,kx+22,ky-14);
+  ctx.lineTo(kx+26,ky+14);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#6de4f8';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(kx-35,ky+14);
+  ctx.quadraticCurveTo(kx-18,ky-10,kx,ky-24);ctx.stroke();
+  ctx.save();ctx.globalAlpha=0.62;ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.ellipse(kx-4,ky-20,11,4,Math.PI*0.12,0,Math.PI*2);ctx.fill();ctx.restore();
+  T('KICKER',kx,ky+28,'#6de4f8',5);
+
+  // ── SPRAY PARTICLES ───────────────────────────────────────────────────────
+  ks.spray.forEach(p=>{
+    ctx.save();ctx.globalAlpha=Math.min(1,p.l*3)*0.65;
+    ctx.fillStyle='#c8eeff';
+    ctx.beginPath();ctx.arc(p.x,p.y,1.5,0,Math.PI*2);ctx.fill();ctx.restore();
+  });
+
+  // ── RIDER & KITE ─────────────────────────────────────────────────────────
+  const rx=ks.inAir?ks.airX:ks.boardX;
+  const ry=ks.inAir?(ky-ks.airY):ky;
+  const LINE_LEN=130;
+  // Kite canvas position (kiteAng: 0=above, ±90=sides, freely wraps in air)
+  const kVX=rx+Math.sin(ks.kiteAng*Math.PI/180)*LINE_LEN;
+  const kVY=ry-Math.abs(Math.cos(ks.kiteAng*Math.PI/180))*LINE_LEN;
+  const kDY=Math.max(30,Math.min(WATER_Y-24,kVY)); // clamp to sky
+
+  // Kite control lines
+  const perpA=(ks.kiteAng+90)*Math.PI/180;
+  const tipS=22;
+  ctx.strokeStyle='rgba(215,215,215,0.42)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(rx,ry-10);
+  ctx.lineTo(kVX-Math.cos(perpA)*tipS,kDY-Math.sin(perpA)*tipS);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(rx,ry-10);
+  ctx.lineTo(kVX+Math.cos(perpA)*tipS,kDY+Math.sin(perpA)*tipS);ctx.stroke();
+
+  // Loop progress arc
+  if(ks.inAir&&Math.abs(ks.kiteVel)>20){
+    ctx.save();ctx.globalAlpha=0.38;
+    ctx.strokeStyle='#e8145e';ctx.lineWidth=2.5;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.arc(kVX,kDY,30,0,ks.loopProg/360*Math.PI*2);ctx.stroke();
+    ctx.setLineDash([]);ctx.restore();
+  }
+
+  // Kite body (LEI bow kite — crescent/arch shape)
+  ctx.save();
+  ctx.translate(kVX,kDY);
+  ctx.rotate((ks.kiteAng%360)*Math.PI/180*0.28); // subtle rotation feedback
+  const KW=28,KH=12;
+  ctx.fillStyle='#e0105a'; // hot pink kite
+  ctx.beginPath();
+  ctx.moveTo(-KW,KH*0.25);
+  ctx.quadraticCurveTo(0,-KH*1.5,KW,KH*0.25);
+  ctx.quadraticCurveTo(0,KH*0.85,-KW,KH*0.25);
+  ctx.closePath();ctx.fill();
+  // Bright leading edge tube
+  ctx.strokeStyle='#fff';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(-KW,KH*0.25);
+  ctx.quadraticCurveTo(0,-KH*1.5,KW,KH*0.25);ctx.stroke();
+  // Internal struts
+  ctx.strokeStyle='rgba(255,255,255,0.45)';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(0,-KH*1.5);ctx.lineTo(0,KH*0.55);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-KW*0.5,-KH*0.55);ctx.lineTo(-KW*0.5,KH*0.38);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(KW*0.5,-KH*0.55);ctx.lineTo(KW*0.5,KH*0.38);ctx.stroke();
+  // Wingtip accents
+  ctx.fillStyle='#ffee00';
+  ctx.beginPath();ctx.arc(-KW,KH*0.25,2.8,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(KW,KH*0.25,2.8,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  // Board
+  ctx.save();ctx.translate(rx,ry);
+  ctx.rotate(ks.inAir?-0.3:ks.kiteAng*0.005);
+  ctx.fillStyle='#1a40cc';
+  ctx.beginPath();ctx.roundRect(-14,-3,28,6,3);ctx.fill();
+  ctx.fillStyle='#4488ff';
+  ctx.fillRect(-8,-3,6,2);ctx.fillRect(5,-3,6,2);
+  ctx.restore();
+
+  // Rider figure
+  const rC=player.color||'#00ddff';
+  ctx.save();ctx.translate(rx,ry);
+  ctx.strokeStyle=rC;ctx.lineWidth=2;
+  // Legs
+  ctx.beginPath();ctx.moveTo(-3,0);ctx.lineTo(-4,-8);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(3,0);ctx.lineTo(4,-8);ctx.stroke();
+  // Torso
+  ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(0,-16);ctx.stroke();
+  // Arms toward kite
+  ctx.beginPath();ctx.moveTo(0,-14);ctx.lineTo(-7,-11);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(0,-14);ctx.lineTo(7,-11);ctx.stroke();
+  // Helmet
+  ctx.fillStyle='#ff4400';ctx.beginPath();ctx.arc(0,-20,5,Math.PI,0);ctx.fill();
+  ctx.fillStyle=rC;ctx.beginPath();ctx.arc(0,-20,3.5,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  // Altitude bar (in air)
+  if(ks.inAir){
+    const hPct=Math.min(1,ks.airY/120);
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(W-22,H-108,14,100);
+    ctx.fillStyle=hPct>0.6?'#ff4400':hPct>0.3?'#ffaa00':'#00ddff';
+    ctx.fillRect(W-22,H-108+100*(1-hPct),14,100*hPct);
+    ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=0.5;
+    ctx.strokeRect(W-22,H-108,14,100);
+    T('ALT',W-15,H-112,'#888',5);
+    T(Math.round(ks.airY/4)+'m',W-15,H-118,'#00ddff',5);
+  }
+
+  // ── HUD BAR ─────────────────────────────────────────────────────────────────
+  ctx.fillStyle='rgba(0,0,30,0.82)';ctx.fillRect(0,0,W,36);
+  T('SCORE: '+ks.score,14,24,player.color||'#00ddff',9,'left');
+  T(ks.jumpNum>=3?'SESSION DONE':'JUMP '+(ks.jumpNum+1)+'/3',W/2,24,'#fff',8);
+
+  // Speed bar (approach phase)
+  if(!ks.inAir&&ks.jumpNum<3){
+    const sP=Math.min(1,ks.boardSpd/300);
+    ctx.fillStyle='#111130';ctx.fillRect(W/2-55,26,110,8);
+    ctx.fillStyle=sP>0.7?'#ff4400':sP>0.4?'#ffaa00':'#00ddff';
+    ctx.fillRect(W/2-55,26,110*sP,8);
+    T('SPD',W/2-62,34,'#445',5,'right');
+    T(ks.boardSpd>210?'LAUNCH!':ks.boardSpd>100?'FAST!':'BUILD SPEED',
+      W/2+2,34,ks.boardSpd>210?'#ff4400':'#667',5,'left');
+  }
+
+  // Kite power ring (top right)
+  ctx.save();ctx.globalAlpha=0.72;
+  ctx.strokeStyle='#00ddff';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(W-18,18,10,0,ks.kitePow*Math.PI*2);ctx.stroke();
+  ctx.globalAlpha=0.15;ctx.beginPath();ctx.arc(W-18,18,10,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+  T('PWR',W-18,33,'#00ddff',5);
+
+  // Controls hint
+  T(!ks.inAir
+    ?'← → STEER KITE   ↑ EDGE HARD   HIT KICKER TO LAUNCH'
+    :'← → LOOP KITE (360°=+150pts)   ↓ NOSE DOWN FOR DISTANCE',
+    W/2,H-5,'rgba(255,255,255,0.25)',5);
+
+  // ── JUMP RESULT OVERLAY ───────────────────────────────────────────────────
+  if(ks.resVisible&&ks.resData){
+    const d=ks.resData;
+    const fa=Math.min(1,ks.resT*0.8);
+    ctx.save();ctx.globalAlpha=fa*0.93;
+    ctx.fillStyle='rgba(0,0,30,0.9)';ctx.fillRect(W/2-128,H/2-64,256,128);
+    ctx.strokeStyle='#00ddff';ctx.lineWidth=1.5;
+    ctx.strokeRect(W/2-128,H/2-64,256,128);
+    ctx.globalAlpha=fa;
+    T('JUMP '+d.jumpN,W/2,H/2-46,'#00ddff',9);
+    T('HEIGHT: '+d.h+'m',W/2,H/2-22,'#fff',8);
+    T('DISTANCE: '+d.dist+'m',W/2,H/2-4,'#fff',8);
+    T('LOOPS: \xd7'+d.loops,W/2,H/2+16,'#ffee00',8);
+    T('+'+d.score+' PTS',W/2,H/2+42,'#ff4400',11);
+    ctx.restore();
+  }
+
+  // End screen
+  if(ks.phase==='end'){
+    const best=ks.jumpScores.length?Math.max(...ks.jumpScores):0;
+    drawEnd('KITE SESSION!',ks.score,'BEST JUMP: '+best+' pts','#00ddff',HS.kitesurf);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // CAREER MODE
 // ══════════════════════════════════════════════════════════════════════════════
 const CR_TIERS=['ROOKIE','PRO','ELITE','LEGEND'];
@@ -2978,6 +3346,9 @@ const CR_EVENTS=[
   {id:'world_pipe',name:'World Halfpipe Finals',sport:'halfpipe',tier:3,prize:6000,entry:600,repReward:120,location:'Tokyo, Japan'},
   {id:'world_surf',name:'World Surfing Championship',sport:'surfing',tier:3,prize:7000,entry:650,repReward:130,location:'Pipeline, Hawaii'},
   {id:'world_bmx',name:'World BMX Grand Prix',sport:'bmx',tier:3,prize:5500,entry:550,repReward:110,location:'Madrid, Spain'},
+  {id:'hood_kite',name:'Hood River Kite Jam',sport:'kitesurf',tier:0,prize:360,entry:55,repReward:11,location:'Hood River, OR'},
+  {id:'pismo_kite',name:'Central Coast Kite Open',sport:'kitesurf',tier:1,prize:750,entry:105,repReward:20,location:'Pismo Beach, CA'},
+  {id:'tarifa_kite',name:'Tarifa World Kite Masters',sport:'kitesurf',tier:3,prize:8000,entry:700,repReward:150,location:'Tarifa, Spain'},
 ];
 
 const CR_JOBS=[
@@ -3002,6 +3373,8 @@ const CR_SHOP_ITEMS=[
   {id:'fr_2',name:'Elite Disc',sport:'frisbee',tier:2,cost:320,stat:'+30% score bonus',key:'frisbee'},
   {id:'sb_1',name:'Pro Snowboard',sport:'snowboard',tier:1,cost:250,stat:'+15% score bonus',key:'snowboard'},
   {id:'sb_2',name:'Elite Snowboard',sport:'snowboard',tier:2,cost:700,stat:'+30% score bonus',key:'snowboard'},
+  {id:'ks_1',name:'Pro Kite',sport:'kitesurf',tier:1,cost:220,stat:'+15% score bonus',key:'kitesurf'},
+  {id:'ks_2',name:'Elite Kite Rig',sport:'kitesurf',tier:2,cost:600,stat:'+30% score bonus',key:'kitesurf'},
   {id:'apt',name:'Beach Apartment',sport:null,tier:1,cost:600,stat:'$120/wk rent. +5 rep/wk.',key:'home_apt'},
   {id:'house',name:'Beach House',sport:null,tier:2,cost:2000,stat:'$200/wk rent. +15 rep/wk.',key:'home_house'},
   {id:'physio',name:'Physio Session',sport:null,tier:0,cost:100,stat:'+30 health (consumable)',key:'physio'},
@@ -3089,7 +3462,7 @@ function initCareer(){
     weeklyRent:0,weeklyFood:55,
     tier:0,rep:0,health:100,fatigue:0,badHabits:0,
     home:'van',
-    gear:{hackySack:0,halfpipe:0,surfing:0,bmx:0,frisbee:0,snowboard:0},
+    gear:{hackySack:0,halfpipe:0,surfing:0,bmx:0,frisbee:0,snowboard:0,kitesurf:0},
     ownedItems:new Set(),
     sponsor:null,sponsorWeekly:0,
     seasonPts:0,totalScore:0,eventsWon:0,podiums:0,eventsEntered:0,
@@ -3215,10 +3588,10 @@ const CR_HUB_HINTS=['Choose a competition to enter','Take a job to earn cash','U
 // Sport colours and letters — used by hub AND map
 const CR_SPORT_COLS={
   hackySack:'#ff6600',surfing:'#00aaff',halfpipe:'#ff00ff',
-  bmx:'#ff4400',frisbee:'#00ff88',snowboard:'#88ddff',
+  bmx:'#ff4400',frisbee:'#00ff88',snowboard:'#88ddff',kitesurf:'#00ddff',
 };
 const CR_SPORT_LETTS={
-  hackySack:'H',surfing:'S',halfpipe:'P',bmx:'B',frisbee:'F',snowboard:'N',
+  hackySack:'H',surfing:'S',halfpipe:'P',bmx:'B',frisbee:'F',snowboard:'N',kitesurf:'K',
 };
 
 // ── CAREER HUB — scene layout ─────────────────────────────────────────────────
@@ -3555,6 +3928,9 @@ const CR_MAP_NODES={
   world_pipe:     {x:350, y:108},
   world_surf:     {x:30,  y:362},
   world_bmx:      {x:350, y:148},
+  hood_kite:      {x:88,  y:148},
+  pismo_kite:     {x:72,  y:265},
+  tarifa_kite:    {x:330, y:88},
 };
 const CR_TIER_COLS=['#aaaaaa','#ffaa00','#ff6600','#ff00ff'];
 const CR_TIER_LABELS=['ROOKIE','PRO','ELITE','LEGEND'];
@@ -3632,6 +4008,17 @@ function _crMapIcon(sport,cx,cy,r,col){
     ctx.fillRect(cx+s*0.27,cy-s*0.22,s*0.28,s*0.44);
     ctx.fillStyle=col;
     for(let k=-1;k<=1;k++){ctx.beginPath();ctx.arc(cx+k*s*0.55,cy-s*0.58,s*0.1,0,Math.PI*2);ctx.fill();}
+  } else if(sport==='kitesurf'){
+    // Crescent kite wing with lines to rider below
+    ctx.lineWidth=Math.max(1,r/5);
+    ctx.beginPath();
+    ctx.moveTo(cx-s,cy+s*0.22);
+    ctx.quadraticCurveTo(cx,cy-s*1.3,cx+s,cy+s*0.22);
+    ctx.quadraticCurveTo(cx,cy-s*0.2,cx-s,cy+s*0.22);
+    ctx.fill();
+    ctx.strokeStyle=col;ctx.lineWidth=Math.max(0.8,r/7);
+    ctx.beginPath();ctx.moveTo(cx,cy+s*0.75);ctx.lineTo(cx-s*0.5,cy+s*0.22);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,cy+s*0.75);ctx.lineTo(cx+s*0.5,cy+s*0.22);ctx.stroke();
   }
   ctx.restore();
 }
@@ -4194,13 +4581,14 @@ function initGame(s){
   else if(s==='bmx')initBMX();
   else if(s==='frisbee')initFrisbee();
   else if(s==='snowboard')initSnowboard();
+  else if(s==='kitesurf')initKitesurf();
 }
 
 const UPDATE={
   title:updateTitle,profileName:updateProfileName,modeSelect:updateModeSelect,
   heroSelect:updateHeroSelect,sponsor:updateSponsor,equipment:updateEquipment,menu:updateMenu,
   hackySack:updateHackySack,halfpipe:updateHalfpipe,surfing:updateSurfing,
-  bmx:updateBMX,frisbee:updateFrisbee,snowboard:updateSnowboard,
+  bmx:updateBMX,frisbee:updateFrisbee,snowboard:updateSnowboard,kitesurf:updateKitesurf,
   careerHub:updateCareerHub,careerMap:updateCareerMap,careerJob:updateCareerJob,
   careerShop:updateCareerShop,careerStandings:updateCareerStandings,
   careerStory:updateCareerStory,careerEventResult:updateCareerEventResult,
@@ -4210,13 +4598,13 @@ const DRAW={
   title:drawTitle,profileName:drawProfileName,modeSelect:drawModeSelect,
   heroSelect:drawHeroSelect,sponsor:drawSponsor,equipment:drawEquipment,menu:drawMenu,
   hackySack:drawHackySack,halfpipe:drawHalfpipe,surfing:drawSurfing,
-  bmx:drawBMX,frisbee:drawFrisbee,snowboard:drawSnowboard,
+  bmx:drawBMX,frisbee:drawFrisbee,snowboard:drawSnowboard,kitesurf:drawKitesurf,
   careerHub:drawCareerHub,careerMap:drawCareerMap,careerJob:drawCareerJob,
   careerShop:drawCareerShop,careerStandings:drawCareerStandings,
   careerStory:drawCareerStory,careerEventResult:drawCareerEventResult,
   careerEnd:drawCareerEnd,
 };
-const IN_GAME=['hackySack','halfpipe','surfing','bmx','frisbee','snowboard'];
+const IN_GAME=['hackySack','halfpipe','surfing','bmx','frisbee','snowboard','kitesurf'];
 
 let last=null;
 function loop(ts){
