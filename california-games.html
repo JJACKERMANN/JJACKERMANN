@@ -1853,11 +1853,26 @@ function initBMX(){
   const trees=Array.from({length:Math.floor(TL/90)},(_,i)=>({
     x:i*90+Math.random()*55,h:30+Math.random()*50,
     kind:Math.random()>.55?'palm':'pine'}));
+  const obstacles=[];
+  let ox=700;
+  while(ox<TL-400){
+    if(!ramps.some(r=>ox>r.x-r.w/2-170&&ox<r.x+r.w/2+170)){
+      if(Math.random()<0.65){
+        if(Math.random()<0.5){
+          obstacles.push({x:ox,w:98,h:54,type:'truck',pts:320,cleared:false,passed:false});
+        } else {
+          const cnt=1+Math.floor(Math.random()*3);
+          obstacles.push({x:ox,w:10+cnt*22,h:46,type:'person',cnt,pts:100+cnt*70,cleared:false,passed:false});
+        }
+        ox+=520+Math.random()*380;
+      } else { ox+=200+Math.random()*180; }
+    } else { ox+=220; }
+  }
   bm={bx:100,by:H-72,vx:4,vy:0,
     score:0,phase:'play',elapsed:0,
     onGround:true,inAir:false,airTime:0,
     trickText:'',trickTimer:0,combo:0,totalTricks:0,
-    camX:0,ramps,trackLen:TL,trees,
+    camX:0,ramps,trackLen:TL,trees,obstacles,
     crashed:false,crashTimer:0,
     jumpCharge:0,jumped:false,
     doneTricks:new Set(),wheelRot:0,
@@ -1879,7 +1894,7 @@ function bmxGround(x){
   for(const r of bm.ramps){
     if(x>r.x-r.w/2&&x<r.x+r.w/2){
       const t=(x-(r.x-r.w/2))/r.w;
-      return gy-r.h*(1-Math.abs(t*2-1));
+      return gy-r.h*Math.sin(t*Math.PI);
     }
   }
   return gy;
@@ -1914,7 +1929,7 @@ function updateBMX(dt){
     sfx.jump();
   }
 
-  bm.vy+=0.38;bm.by+=bm.vy;
+  bm.vy+=0.28;bm.by+=bm.vy;
 
   // Ramp slope: give an upward kick when riding over the rising half of a ramp
   if(bm.onGround){
@@ -1980,6 +1995,26 @@ function updateBMX(dt){
     bm.onGround=false;bm.inAir=true;bm.airTime+=dt;bm.score+=dt*4;
   }
 
+  // Obstacle collision / clearance
+  if(!bm.crashed){
+    for(const ob of bm.obstacles){
+      if(ob.passed)continue;
+      if(bm.bx>ob.x-ob.w/2-6&&bm.bx<ob.x+ob.w/2+6){
+        if(bm.by+14>H-62-ob.h+4){
+          bm.crashed=true;bm.crashTimer=1.4;bm.inAir=false;
+          bm.score=Math.max(0,bm.score-200);sfx.oof();break;
+        } else if(!ob.cleared&&bm.inAir){
+          ob.cleared=true;
+          const pts=ob.pts*(bm.combo+1)*player.bonus('bmx')|0;
+          bm.score+=pts;bm.combo++;bm.totalTricks++;
+          bm.flipText=(ob.type==='truck'?'TRUCK JUMP! ':'CROWD JUMP! ')+'+'+pts;
+          bm.flipTimer=2.2;sfx.score();
+        }
+      }
+      if(bm.bx>ob.x+ob.w/2+20)ob.passed=true;
+    }
+  }
+
   // A/S/D/W tricks
   if(bm.trickTimer>0)bm.trickTimer-=dt;
   if(bm.inAir&&bm.trickTimer<=0){
@@ -2043,6 +2078,43 @@ function drawBMX(){
     ctx.strokeStyle=r.type==='big'?'#ff4400':'#7a5522';ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(rx-r.w/2,H-62);ctx.lineTo(rx,H-62-r.h);ctx.lineTo(rx+r.w/2,H-62);ctx.stroke();
     if(r.type==='big')T('▲',rx,H-62-r.h-4,'#ff8800',8);
+  });
+
+  // ── Obstacles ─────────────────────────────────────────────────────────────
+  bm.obstacles.forEach(ob=>{
+    const ox2=ob.x-bm.camX;
+    if(ox2<-180||ox2>W+180)return;
+    const gy=H-62;
+    if(ob.type==='truck'){
+      [-32,32].forEach(wx=>{
+        ctx.fillStyle='#222';ctx.beginPath();ctx.arc(ox2+wx,gy-8,10,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#666';ctx.beginPath();ctx.arc(ox2+wx,gy-8,5,0,Math.PI*2);ctx.fill();
+      });
+      ctx.fillStyle='#5a7a6a';ctx.fillRect(ox2-45,gy-ob.h,88,ob.h-8);
+      ctx.strokeStyle='#3a5a4a';ctx.lineWidth=2;ctx.strokeRect(ox2-45,gy-ob.h,88,ob.h-8);
+      ctx.fillStyle='rgba(255,255,255,0.18)';ctx.fillRect(ox2-45,gy-ob.h+14,88,6);
+      ctx.fillStyle='#4a6a58';ctx.fillRect(ox2+30,gy-36,18,28);
+      ctx.strokeStyle='#3a5a48';ctx.lineWidth=2;ctx.strokeRect(ox2+30,gy-36,18,28);
+      ctx.fillStyle='#9ac8ee';ctx.fillRect(ox2+33,gy-32,13,10);
+      if(!ob.cleared)T('JUMP!',ox2,gy-ob.h-16,'rgba(255,220,0,0.92)',6);
+    } else {
+      const cnt=ob.cnt||1;
+      const sp=cnt>1?(ob.w-10)/(cnt-1):0;
+      const shirts=['#ee4444','#4488ee','#ffaa22','#44bb44','#ff88cc'];
+      for(let i=0;i<cnt;i++){
+        const px=ox2-(cnt>1?ob.w/2-5:0)+(cnt>1?sp*i:0);
+        ctx.fillStyle='rgba(0,0,0,0.14)';ctx.beginPath();ctx.ellipse(px,gy-1,8,3,0,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='#442200';ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(px,gy-ob.h+28);ctx.lineTo(px-5,gy-2);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(px,gy-ob.h+28);ctx.lineTo(px+5,gy-2);ctx.stroke();
+        ctx.fillStyle=shirts[i%shirts.length];ctx.fillRect(px-5,gy-ob.h+11,10,17);
+        ctx.strokeStyle='#884422';ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(px-5,gy-ob.h+16);ctx.lineTo(px-13,gy-ob.h+10);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(px+5,gy-ob.h+16);ctx.lineTo(px+13,gy-ob.h+8);ctx.stroke();
+        ctx.fillStyle='#cc8855';ctx.beginPath();ctx.arc(px,gy-ob.h+6,5,0,Math.PI*2);ctx.fill();
+      }
+      if(!ob.cleared)T(cnt>1?'CROWD!':'JUMP!',ox2,gy-ob.h-14,'rgba(255,220,0,0.92)',6);
+    }
   });
 
   const finX=bm.trackLen-bm.camX;
