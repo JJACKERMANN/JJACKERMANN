@@ -1914,7 +1914,7 @@ function updateBMX(dt){
       bm.bx=spawnX;bm.camX=bm.bx-160;
       // Mark all obstacles behind new position as passed
       bm.obstacles.forEach(ob=>{if(ob.x<spawnX-30)ob.passed=true;});
-      bm.crashed=false;bm.by=H-72;bm.vy=0;bm.onGround=true;bm.combo=0;
+      bm.crashed=false;bm.by=H-72;bm.vy=0;bm.onGround=true;bm.inAir=false;bm.jumped=false;bm.combo=0;
       bm.rotation=0;bm.rotVel=0;bm.airRot=0;bm.flipsScored=0;bm.flipDir=0;}
     return;}
 
