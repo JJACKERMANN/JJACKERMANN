@@ -1061,7 +1061,7 @@ function drawHackySack(){
     ctx.beginPath();ctx.arc(hk.px+28,hk.py-38,4,0,Math.PI*2);ctx.fill();
     const ssHero={...hero,hair:'#ffdd00',band:false,shades:false};
     drawHead(hk.px,hk.py-43,9,ssHero);
-  } else {
+  } else if(!pw.hulkActive&&!pw.hulkTransforming){
     // Normal stance
     ctx.strokeStyle=hero.color;ctx.lineWidth=3;
     ctx.beginPath();ctx.moveTo(hk.px,hk.py-10);ctx.lineTo(hk.px-12,hk.py+8);ctx.lineTo(hk.px-14,hk.py+22);ctx.stroke();
