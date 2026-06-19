@@ -1903,6 +1903,17 @@ function updateBMX(dt){
   if(bm.phase==='end'){if(kp['Enter'])state='menu';return;}
   if(bm.crashed){bm.crashTimer-=dt;
     if(bm.crashTimer<=0){
+      // Advance bx forward until clear of all ramps and obstacles
+      let spawnX=bm.bx+200;
+      while(spawnX<bm.trackLen-200){
+        const onRamp=bm.ramps.some(r=>spawnX>r.x-r.w/2-24&&spawnX<r.x+r.w/2+24);
+        const onOb=bm.obstacles.some(ob=>spawnX>ob.x-ob.w/2-24&&spawnX<ob.x+ob.w/2+24);
+        if(!onRamp&&!onOb)break;
+        spawnX+=32;
+      }
+      bm.bx=spawnX;bm.camX=bm.bx-160;
+      // Mark all obstacles behind new position as passed
+      bm.obstacles.forEach(ob=>{if(ob.x<spawnX-30)ob.passed=true;});
       bm.crashed=false;bm.by=H-72;bm.vy=0;bm.onGround=true;bm.combo=0;
       bm.rotation=0;bm.rotVel=0;bm.airRot=0;bm.flipsScored=0;bm.flipDir=0;}
     return;}
