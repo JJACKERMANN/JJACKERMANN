@@ -598,7 +598,7 @@ function drawMenu(){
   T('ESC=BACK',W-14,66,'#444',7,'right');
 
   SPORTS.forEach((s,i)=>{
-    const y=98+i*54,sel=i===menuSel;
+    const y=88+i*43,sel=i===menuSel;
     if(sel){
       ctx.fillStyle='rgba(255,255,255,0.07)';
       ctx.fillRect(W/2-155,y-18,310,34);
