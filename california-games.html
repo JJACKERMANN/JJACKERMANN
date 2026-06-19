@@ -42,6 +42,10 @@ canvas{display:block;image-rendering:pixelated;}
   gap:3px;pointer-events:none;}
 #tc-act{position:absolute;right:6px;bottom:8px;display:none;
   flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;}
+@media(hover:none)and(pointer:coarse){
+  #tc-dp{display:grid;}
+  #tc-act{display:flex;}
+}
 </style>
 </head>
 <body>
@@ -2108,9 +2112,6 @@ requestAnimationFrame(loop);
 
 // ── TOUCH CONTROLS ───────────────────────────────────────────────────────────
 (function(){
-  if(!('ontouchstart' in window)&&!navigator.maxTouchPoints)return;
-  document.getElementById('tc-dp').style.display='grid';
-  document.getElementById('tc-act').style.display='flex';
   document.querySelectorAll('.tcb[data-key]').forEach(btn=>{
     const code=btn.dataset.key;
     btn.addEventListener('touchstart',e=>{
