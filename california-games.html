@@ -2112,6 +2112,7 @@ function initSnowboard(){
     flipRot:0, flipDir:0, flipIn:false,
     jumpCD:0,
     wiped:false, wipeTimer:0,
+    bear:{bwy:-300,bx:W/2,spd:80,warnT:0,caught:false},
     obstacles:[], nextObstY:H*0.7,
     score:0, combo:0, totalTricks:0,
     trickText:'', trickTimer:0, trickPts:0,
@@ -2138,7 +2139,7 @@ function updateSnowboard(dt){
 
   if(sb.wiped){
     sb.wipeTimer-=dt;
-    if(sb.wipeTimer<=0){sb.wiped=false;sb.px=W/2;sb.vx=0;sb.inAir=false;sb.airH=0;sb.combo=0;}
+    if(sb.wipeTimer<=0){sb.wiped=false;sb.worldY+=200;sb.px=W/2;sb.vx=0;sb.inAir=false;sb.airH=0;sb.combo=0;}
     return;
   }
 
@@ -2201,6 +2202,18 @@ function updateSnowboard(dt){
   while(!sb.trees.length||sb.trees[sb.trees.length-1].wy<sb.worldY+H*2)
     sb.trees.push({side:Math.random()<0.5?'L':'R',wy:sb.worldY+H*2+Math.random()*180,sz:9+Math.random()*11});
   sb.trees=sb.trees.filter(t=>t.wy>sb.worldY-180);
+
+  // ── Polar bear chase ──────────────────────────────────────────────────────
+  const br=sb.bear;
+  br.spd=Math.min(200,br.spd+8*dt); // accelerates over time
+  br.bwy+=br.spd*dt;
+  br.bx+=(sb.px-br.bx)*Math.min(1,1.4*dt); // lateral tracking
+  const bearSY=br.bwy-sb.worldY+SB_PY;
+  br.warnT=bearSY>H*0.12?Math.max(0,br.warnT-dt):Math.min(1,br.warnT+dt*3);
+  if(!sb.wiped&&bearSY>=SB_PY-28){
+    sb.wiped=true;sb.wipeTimer=2.0;sb.score=Math.max(0,sb.score-200);sb.combo=0;sfx.oof();
+    br.bwy=sb.worldY-350; // reset bear behind after catch
+  }
 
   // Collision (skip when airborne high enough to clear)
   if(!sb.wiped){
@@ -2306,6 +2319,45 @@ function drawSnowboard(){
     ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(p.x,p.y,p.sz,0,Math.PI*2);ctx.fill();
   });
   ctx.globalAlpha=1;
+  // ── Polar bear ────────────────────────────────────────────────────────────
+  {
+    const br=sb.bear;
+    const bsy=br.bwy-sb.worldY+SB_PY;
+    if(bsy>-50&&bsy<H+50){
+      const bx=br.bx,by=bsy;
+      const run=Math.sin(sb.bgTick*12)*4; // leg animation
+      ctx.save();ctx.translate(bx,by);
+      // Shadow
+      ctx.fillStyle='rgba(0,0,0,0.12)';ctx.beginPath();ctx.ellipse(0,14,20,5,0,0,Math.PI*2);ctx.fill();
+      // Back legs
+      ctx.fillStyle='#d8eef8';
+      ctx.fillRect(-16,5,7,12+run);ctx.fillRect(9,5,7,12-run);
+      // Body
+      ctx.beginPath();ctx.ellipse(0,0,22,13,0,0,Math.PI*2);ctx.fill();
+      // Front legs
+      ctx.fillRect(-14,-4,6,11-run);ctx.fillRect(8,-4,6,11+run);
+      // Head
+      ctx.beginPath();ctx.arc(20,-6,11,0,Math.PI*2);ctx.fill();
+      // Ears
+      ctx.fillStyle='#c0dded';
+      ctx.beginPath();ctx.arc(15,-16,4,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(26,-16,4,0,Math.PI*2);ctx.fill();
+      // Nose
+      ctx.fillStyle='#222';ctx.beginPath();ctx.ellipse(29,-6,3.5,2.5,0,0,Math.PI*2);ctx.fill();
+      // Eyes
+      ctx.fillStyle='#111';ctx.beginPath();ctx.arc(22,-10,2,0,Math.PI*2);ctx.fill();
+      // Angry brows
+      ctx.strokeStyle='#333';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(18,-14);ctx.lineTo(25,-11);ctx.stroke();
+      ctx.restore();
+    }
+    // Warning flash
+    if(br.warnT>0){
+      ctx.globalAlpha=br.warnT*0.9;
+      T('⚠ POLAR BEAR!',W/2,H*0.12,'#ff4400',14);
+      ctx.globalAlpha=1;
+    }
+  }
   // Player
   const px=sb.px, py=SB_PY-sb.airH;
   const hero=player.hero;
