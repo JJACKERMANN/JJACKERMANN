@@ -592,7 +592,8 @@ function initHackySack(){
     kickCD:0,trickTimer:0,trickText:'',trickPts:0,phase:'play',bgO:0,
     gull:{active:false,x:0,y:0,spd:0,dir:1,spawnT:8,wing:0,hit:false,hitT:0,feathers:[]},
     drop:{active:false,x:0,y:0,vy:0,pts:0,rot:0},
-    bonusTxt:'',bonusTxtT:0};
+    bonusTxt:'',bonusTxtT:0,
+    power:{active:false,timer:0,triggered:false,pvx:0,pvy:0,auraT:0,shootCD:0,sacks:[],birds:[]}};
 }
 function updateHackySack(dt){
   if(hk.phase==='end'){if(kp['Enter'])state='menu';return;}
@@ -600,67 +601,143 @@ function updateHackySack(dt){
   if(hk.timerFrac>=1){hk.timerFrac-=1;hk.timer--;
     if(hk.timer<=0){hk.phase='end';saveHS('hackySack',hk.score);sfx.score();return;}}
   hk.bgO+=0.4;if(hk.kickCD>0)hk.kickCD-=dt;if(hk.trickTimer>0)hk.trickTimer-=dt;
-  if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-4);
-  if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+4);
-  if(keys['Space'])hk.px+=(hk.bx-hk.px)*0.12;
-  hk.bvy+=0.2;hk.bx+=hk.bvx;hk.by+=hk.bvy;
-  if(hk.bx<10){hk.bx=10;hk.bvx=Math.abs(hk.bvx);}
-  if(hk.bx>W-10){hk.bx=W-10;hk.bvx=-Math.abs(hk.bvx);}
-  if(hk.by>H-42){hk.by=H-42;hk.bvy=-(5+Math.random());hk.combo=0;sfx.oof();}
-  const dx=hk.bx-hk.px,dy=hk.by-(hk.py-18);
-  if(Math.sqrt(dx*dx+dy*dy)<40&&hk.kickCD<=0&&hk.bvy>-1){
-    hk.kickCD=0.26;
-    hk.bvx=dx*0.3+(Math.random()-.5)*2;hk.bvy=-(7.5+Math.random()*2);
-    hk.kicks++;hk.combo++;
-    const t=['KICK!','DOUBLE!','TRIPLE!','QUAD!','KNEE!','HEADER!','SICK!','GNARLY!'];
-    hk.trickText=t[Math.min(hk.combo-1,t.length-1)];
-    hk.trickPts=hk.combo*10*player.bonus('hackySack')|0;
-    hk.score+=hk.trickPts;hk.trickTimer=1.4;sfx.kick();
-  }
-  // ── Seagull ──────────────────────────────────────────────────────────────
-  const g=hk.gull;
-  g.wing+=dt*6;
-  if(g.hit){
-    g.hitT-=dt;
-    g.feathers.forEach(f=>{f.x+=f.vx;f.y+=f.vy;f.vy+=0.15;f.life-=dt;});
-    if(g.hitT<=0){g.active=false;g.spawnT=5+Math.random()*6;}
-  } else if(g.active){
-    g.x+=g.dir*g.spd;
-    const gdx=hk.bx-g.x,gdy=hk.by-g.y;
-    if(Math.sqrt(gdx*gdx+gdy*gdy)<24){
-      g.hit=true;g.hitT=0.7;
-      const difficulty=(45-hk.timer)/45;
-      const pts=Math.floor((80+difficulty*170)*player.bonus('hackySack'));
-      hk.drop={active:true,x:g.x,y:g.y,vy:-1,pts,rot:0};
-      g.feathers=[];
-      for(let i=0;i<8;i++)g.feathers.push({x:g.x,y:g.y,vx:(Math.random()-0.5)*4,vy:Math.random()*-3-1,life:1.2});
-      sfx.score();
-    }
-    if((g.dir>0&&g.x>W+70)||(g.dir<0&&g.x<-70)){g.active=false;g.spawnT=5+Math.random()*7;}
-  } else {
-    g.spawnT-=dt;
-    if(g.spawnT<=0){
-      const difficulty=(45-hk.timer)/45;
-      g.spd=1.5+difficulty*3.5+(Math.random()*0.8);
-      g.dir=Math.random()<0.5?1:-1;
-      g.x=g.dir>0?-60:W+60;
-      g.y=52+Math.random()*80;
-      g.active=true;g.hit=false;g.feathers=[];
-    }
-  }
-  // ── Bonus drop ───────────────────────────────────────────────────────────
-  const db=hk.drop;
-  if(db.active){
-    db.vy+=0.25;db.y+=db.vy;db.rot+=0.1;
-    const bdx=db.x-hk.px,bdy=db.y-(hk.py-20);
-    if(Math.abs(bdx)<32&&Math.abs(bdy)<36){
-      hk.score+=db.pts;
-      hk.bonusTxt='SEAGULL! +'+db.pts;hk.bonusTxtT=2.2;
-      db.active=false;sfx.score();
-    }
-    if(db.y>H-30)db.active=false;
-  }
   if(hk.bonusTxtT>0)hk.bonusTxtT-=dt;
+  const pw=hk.power;
+
+  if(pw.active){
+    // ── POWER MODE ────────────────────────────────────────────────────────
+    pw.timer-=dt;pw.auraT+=dt;
+    if(pw.shootCD>0)pw.shootCD-=dt;
+
+    // Flight
+    if(keys['ArrowLeft']) pw.pvx-=320*dt;
+    if(keys['ArrowRight'])pw.pvx+=320*dt;
+    if(keys['ArrowUp'])   pw.pvy-=320*dt;
+    if(keys['ArrowDown']) pw.pvy+=320*dt;
+    pw.pvx*=0.85;pw.pvy*=0.85;
+    hk.px=Math.max(22,Math.min(W-22,hk.px+pw.pvx*dt));
+    hk.py=Math.max(55,Math.min(H-40,hk.py+pw.pvy*dt));
+
+    // Shoot sack at nearest bird
+    if((kp['Space']||pw.shootCD<=0)&&pw.shootCD<=0){
+      let nb=null,nd=Infinity;
+      pw.birds.forEach(b=>{if(b.dead)return;const d=Math.hypot(b.x-hk.px,b.y-hk.py);if(d<nd){nd=d;nb=b;}});
+      if(nb){
+        const d=Math.hypot(nb.x-hk.px,nb.y-hk.py)||1;
+        pw.sacks.push({x:hk.px,y:hk.py-20,vx:(nb.x-hk.px)/d*9,vy:(nb.y-hk.py)/d*9});
+      } else {
+        pw.sacks.push({x:hk.px,y:hk.py-20,vx:0,vy:-9});
+      }
+      pw.shootCD=0.22;sfx.kick();
+    }
+
+    // Update sacks
+    pw.sacks=pw.sacks.filter(s=>{
+      s.x+=s.vx;s.y+=s.vy;
+      return s.x>-10&&s.x<W+10&&s.y>-10&&s.y<H+10;
+    });
+
+    // Update birds
+    pw.birds.forEach(b=>{
+      if(b.dead){b.deadT-=dt;b.feathers.forEach(f=>{f.x+=f.vx;f.y+=f.vy;f.vy+=0.2;f.life-=dt;});return;}
+      b.ph+=dt*3;
+      const ddx=hk.px-b.x,ddy=hk.py-b.y,dd=Math.hypot(ddx,ddy)||1;
+      b.vx+=(ddx/dd)*2.2*dt*10+Math.sin(b.ph+1.5)*0.6;
+      b.vy+=(ddy/dd)*2.2*dt*10+Math.cos(b.ph)*0.4;
+      b.vx*=0.91;b.vy*=0.91;b.x+=b.vx;b.y+=b.vy;
+      // Sack collision
+      for(let si=pw.sacks.length-1;si>=0;si--){
+        const s=pw.sacks[si];
+        if(Math.hypot(s.x-b.x,s.y-b.y)<22){
+          b.dead=true;b.deadT=0.9;b.feathers=[];
+          for(let i=0;i<7;i++)b.feathers.push({x:b.x,y:b.y,vx:(Math.random()-0.5)*5,vy:Math.random()*-4-1,life:0.9});
+          const pts=50*(hk.combo+1)*player.bonus('hackySack')|0;
+          hk.score+=pts;hk.bonusTxt='BIRD DOWN! +'+pts;hk.bonusTxtT=1.4;
+          pw.sacks.splice(si,1);sfx.score();break;
+        }
+      }
+    });
+    pw.birds=pw.birds.filter(b=>!b.dead||b.deadT>0);
+
+    if(pw.timer<=0){
+      pw.active=false;hk.py=H-78;hk.px=W/2;
+      hk.bx=W/2;hk.by=H-130;hk.bvx=1.8;hk.bvy=-4;
+      hk.bonusTxt='POWER DOWN!';hk.bonusTxtT=2.2;
+    }
+  } else {
+    // ── NORMAL PLAY ───────────────────────────────────────────────────────
+    if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-4);
+    if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+4);
+    if(keys['Space'])hk.px+=(hk.bx-hk.px)*0.12;
+    hk.bvy+=0.2;hk.bx+=hk.bvx;hk.by+=hk.bvy;
+    if(hk.bx<10){hk.bx=10;hk.bvx=Math.abs(hk.bvx);}
+    if(hk.bx>W-10){hk.bx=W-10;hk.bvx=-Math.abs(hk.bvx);}
+    if(hk.by>H-42){hk.by=H-42;hk.bvy=-(5+Math.random());hk.combo=0;sfx.oof();}
+    const dx=hk.bx-hk.px,dy=hk.by-(hk.py-18);
+    if(Math.sqrt(dx*dx+dy*dy)<40&&hk.kickCD<=0&&hk.bvy>-1){
+      hk.kickCD=0.26;
+      hk.bvx=dx*0.3+(Math.random()-.5)*2;hk.bvy=-(7.5+Math.random()*2);
+      hk.kicks++;hk.combo++;
+      const t=['KICK!','DOUBLE!','TRIPLE!','QUAD!','KNEE!','HEADER!','SICK!','GNARLY!'];
+      hk.trickText=t[Math.min(hk.combo-1,t.length-1)];
+      hk.trickPts=hk.combo*10*player.bonus('hackySack')|0;
+      hk.score+=hk.trickPts;hk.trickTimer=1.4;sfx.kick();
+      // Trigger superpower on gnarly combo 10
+      if(hk.combo>=10&&!pw.triggered){
+        pw.triggered=true;pw.active=true;pw.timer=10;pw.auraT=0;
+        pw.pvx=0;pw.pvy=0;pw.shootCD=0;pw.sacks=[];pw.birds=[];
+        for(let i=0;i<10;i++){
+          const e=i%4;
+          const bx=e===0||e===2?Math.random()*W:e===1?W+30:-30;
+          const by=e===0?-30:e===2?H+30:Math.random()*H;
+          pw.birds.push({x:bx,y:by,vx:0,vy:0,ph:Math.random()*Math.PI*2,dead:false,deadT:0,feathers:[]});
+        }
+        hk.bonusTxt='SUPER SAIYAN MODE!';hk.bonusTxtT=3;sfx.score();
+      }
+    }
+    // ── Seagull ──────────────────────────────────────────────────────────
+    const g=hk.gull;
+    g.wing+=dt*6;
+    if(g.hit){
+      g.hitT-=dt;
+      g.feathers.forEach(f=>{f.x+=f.vx;f.y+=f.vy;f.vy+=0.15;f.life-=dt;});
+      if(g.hitT<=0){g.active=false;g.spawnT=5+Math.random()*6;}
+    } else if(g.active){
+      g.x+=g.dir*g.spd;
+      const gdx=hk.bx-g.x,gdy=hk.by-g.y;
+      if(Math.sqrt(gdx*gdx+gdy*gdy)<24){
+        g.hit=true;g.hitT=0.7;
+        const difficulty=(45-hk.timer)/45;
+        const pts=Math.floor((80+difficulty*170)*player.bonus('hackySack'));
+        hk.drop={active:true,x:g.x,y:g.y,vy:-1,pts,rot:0};
+        g.feathers=[];
+        for(let i=0;i<8;i++)g.feathers.push({x:g.x,y:g.y,vx:(Math.random()-0.5)*4,vy:Math.random()*-3-1,life:1.2});
+        sfx.score();
+      }
+      if((g.dir>0&&g.x>W+70)||(g.dir<0&&g.x<-70)){g.active=false;g.spawnT=5+Math.random()*7;}
+    } else {
+      g.spawnT-=dt;
+      if(g.spawnT<=0){
+        const difficulty=(45-hk.timer)/45;
+        g.spd=1.5+difficulty*3.5+(Math.random()*0.8);
+        g.dir=Math.random()<0.5?1:-1;
+        g.x=g.dir>0?-60:W+60;
+        g.y=52+Math.random()*80;
+        g.active=true;g.hit=false;g.feathers=[];
+      }
+    }
+    // ── Bonus drop ───────────────────────────────────────────────────────
+    const db=hk.drop;
+    if(db.active){
+      db.vy+=0.25;db.y+=db.vy;db.rot+=0.1;
+      const bdx=db.x-hk.px,bdy=db.y-(hk.py-20);
+      if(Math.abs(bdx)<32&&Math.abs(bdy)<36){
+        hk.score+=db.pts;hk.bonusTxt='SEAGULL! +'+db.pts;hk.bonusTxtT=2.2;
+        db.active=false;sfx.score();
+      }
+      if(db.y>H-30)db.active=false;
+    }
+  }
 }
 function drawHackySack(){
   // Beach sky
@@ -687,45 +764,93 @@ function drawHackySack(){
   ctx.fillStyle='#2d7a1a';
   [[W-68,H*.34,40],[W-80,H*.31,30],[W-56,H*.31,26]].forEach(([x,y,r])=>{ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();});
   ctx.fillStyle='#C8A400';ctx.fillRect(0,H-32,W,32);
-  // Player shadow
-  ctx.fillStyle='rgba(0,0,0,0.12)';
-  ctx.beginPath();ctx.ellipse(hk.px,hk.py+6,22,5,0,0,Math.PI*2);ctx.fill();
-  // Player
+  const pw=hk.power;
   const hero=player.hero;
+  // Player shadow (ground only)
+  if(!pw.active){
+    ctx.fillStyle='rgba(0,0,0,0.12)';
+    ctx.beginPath();ctx.ellipse(hk.px,H-72,22,5,0,0,Math.PI*2);ctx.fill();
+  }
+  // ── Super Saiyan aura ─────────────────────────────────────────────────────
+  if(pw.active){
+    const auraR=38+Math.sin(pw.auraT*8)*13;
+    const ag=ctx.createRadialGradient(hk.px,hk.py-22,0,hk.px,hk.py-22,auraR+20);
+    ag.addColorStop(0,'rgba(255,255,80,0.75)');ag.addColorStop(0.45,'rgba(255,200,0,0.35)');ag.addColorStop(1,'rgba(255,120,0,0)');
+    ctx.fillStyle=ag;ctx.beginPath();ctx.arc(hk.px,hk.py-22,auraR+20,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(255,255,0,0.65)';ctx.lineWidth=2;
+    for(let i=0;i<8;i++){
+      const ang=(i/8)*Math.PI*2+pw.auraT*2.5;
+      const len=22+Math.sin(pw.auraT*6+i*1.3)*14;
+      ctx.beginPath();ctx.moveTo(hk.px+Math.cos(ang)*14,hk.py-22+Math.sin(ang)*14);
+      ctx.lineTo(hk.px+Math.cos(ang)*(14+len),hk.py-22+Math.sin(ang)*(14+len));ctx.stroke();
+    }
+  }
+  // ── Player body ───────────────────────────────────────────────────────────
   const kp2=hk.kickCD>0.14;
-  // Legs
-  ctx.strokeStyle=hero.color;ctx.lineWidth=3;
-  ctx.beginPath();
-  ctx.moveTo(hk.px,hk.py-10);ctx.lineTo(hk.px-12,hk.py+8);ctx.lineTo(hk.px-14,hk.py+22);
-  ctx.stroke();
-  ctx.beginPath();ctx.moveTo(hk.px,hk.py-10);
-  if(kp2)ctx.lineTo(hk.px+24,hk.py-26);
-  else{ctx.lineTo(hk.px+12,hk.py+8);ctx.lineTo(hk.px+14,hk.py+22);}
-  ctx.stroke();
-  // Shorts
-  ctx.fillStyle=hero.accent;ctx.fillRect(hk.px-9,hk.py-14,18,8);
-  // Torso
-  ctx.fillStyle=hero.color;
-  ctx.beginPath();
-  ctx.moveTo(hk.px-8,hk.py-14);ctx.lineTo(hk.px+8,hk.py-14);
-  ctx.lineTo(hk.px+6,hk.py-32);ctx.lineTo(hk.px-6,hk.py-32);
-  ctx.closePath();ctx.fill();
-  // Arms
-  ctx.strokeStyle=hero.color;ctx.lineWidth=3;
-  ctx.beginPath();
-  ctx.moveTo(hk.px-8,hk.py-30);ctx.lineTo(hk.px-17,hk.py-22);
-  ctx.moveTo(hk.px+8,hk.py-30);ctx.lineTo(hk.px+17,hk.py-22);
-  ctx.stroke();
-  drawHead(hk.px,hk.py-43,9,hero);
-  // Kick zone hint (faint circle)
-  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;
-  ctx.setLineDash([4,4]);
-  ctx.beginPath();ctx.arc(hk.px,hk.py-18,40,0,Math.PI*2);ctx.stroke();
-  ctx.setLineDash([]);
-  // Ball
-  ctx.fillStyle='#ff3300';ctx.beginPath();ctx.arc(hk.bx,hk.by,8,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#ff8800';ctx.beginPath();ctx.arc(hk.bx-2,hk.by-2,4,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle='#880000';ctx.lineWidth=1;ctx.beginPath();ctx.arc(hk.bx,hk.by,8,0,Math.PI*2);ctx.stroke();
+  if(pw.active){
+    // Flying / Iron Man pose
+    ctx.strokeStyle=hero.color;ctx.lineWidth=3;
+    // Legs back-swept
+    ctx.beginPath();ctx.moveTo(hk.px,hk.py-10);ctx.lineTo(hk.px-8,hk.py+16);ctx.lineTo(hk.px-6,hk.py+28);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(hk.px,hk.py-10);ctx.lineTo(hk.px+8,hk.py+16);ctx.lineTo(hk.px+6,hk.py+28);ctx.stroke();
+    ctx.fillStyle=hero.accent;ctx.fillRect(hk.px-9,hk.py-14,18,8);
+    ctx.fillStyle=hero.color;
+    ctx.beginPath();ctx.moveTo(hk.px-8,hk.py-14);ctx.lineTo(hk.px+8,hk.py-14);ctx.lineTo(hk.px+6,hk.py-32);ctx.lineTo(hk.px-6,hk.py-32);ctx.closePath();ctx.fill();
+    // Arms forward (shooting)
+    ctx.strokeStyle=hero.color;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(hk.px-8,hk.py-30);ctx.lineTo(hk.px-28,hk.py-38);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(hk.px+8,hk.py-30);ctx.lineTo(hk.px+28,hk.py-38);ctx.stroke();
+    // Gold palm blasters
+    ctx.fillStyle='#ffdd00';ctx.beginPath();ctx.arc(hk.px-28,hk.py-38,4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(hk.px+28,hk.py-38,4,0,Math.PI*2);ctx.fill();
+    const ssHero={...hero,hair:'#ffdd00',band:false,shades:false};
+    drawHead(hk.px,hk.py-43,9,ssHero);
+  } else {
+    // Normal stance
+    ctx.strokeStyle=hero.color;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(hk.px,hk.py-10);ctx.lineTo(hk.px-12,hk.py+8);ctx.lineTo(hk.px-14,hk.py+22);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(hk.px,hk.py-10);
+    if(kp2)ctx.lineTo(hk.px+24,hk.py-26);
+    else{ctx.lineTo(hk.px+12,hk.py+8);ctx.lineTo(hk.px+14,hk.py+22);}
+    ctx.stroke();
+    ctx.fillStyle=hero.accent;ctx.fillRect(hk.px-9,hk.py-14,18,8);
+    ctx.fillStyle=hero.color;
+    ctx.beginPath();ctx.moveTo(hk.px-8,hk.py-14);ctx.lineTo(hk.px+8,hk.py-14);ctx.lineTo(hk.px+6,hk.py-32);ctx.lineTo(hk.px-6,hk.py-32);ctx.closePath();ctx.fill();
+    ctx.strokeStyle=hero.color;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(hk.px-8,hk.py-30);ctx.lineTo(hk.px-17,hk.py-22);ctx.moveTo(hk.px+8,hk.py-30);ctx.lineTo(hk.px+17,hk.py-22);ctx.stroke();
+    drawHead(hk.px,hk.py-43,9,hero);
+    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.arc(hk.px,hk.py-18,40,0,Math.PI*2);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // ── Power birds ───────────────────────────────────────────────────────────
+  if(pw.active){
+    pw.birds.forEach(b=>{
+      b.feathers.forEach(f=>{ctx.globalAlpha=Math.max(0,f.life);ctx.fillStyle='#888';ctx.fillRect(f.x-2,f.y-3,4,8);});
+      ctx.globalAlpha=1;
+      if(b.dead)return;
+      ctx.save();ctx.translate(b.x,b.y);
+      const wf=Math.sin(b.ph)*9;
+      ctx.fillStyle='#333';ctx.beginPath();ctx.ellipse(0,0,9,3.5,0,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#222';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(-7,-1);ctx.quadraticCurveTo(-16,-7+wf*0.3,-22,-3-wf*0.2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(7,-1);ctx.quadraticCurveTo(16,-7+wf*0.3,22,-3-wf*0.2);ctx.stroke();
+      ctx.fillStyle='#ff2200';ctx.beginPath();ctx.arc(7,-1,2.5,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    });
+    // Power sacks (glowing yellow)
+    pw.sacks.forEach(s=>{
+      ctx.fillStyle='rgba(255,255,0,0.25)';ctx.beginPath();ctx.arc(s.x-s.vx*2,s.y-s.vy*2,11,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffff00';ctx.beginPath();ctx.arc(s.x,s.y,7,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#ff8800';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(s.x,s.y,7,0,Math.PI*2);ctx.stroke();
+    });
+  }
+  // ── Normal ball (hidden during power) ────────────────────────────────────
+  if(!pw.active){
+    ctx.fillStyle='#ff3300';ctx.beginPath();ctx.arc(hk.bx,hk.by,8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ff8800';ctx.beginPath();ctx.arc(hk.bx-2,hk.by-2,4,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#880000';ctx.lineWidth=1;ctx.beginPath();ctx.arc(hk.bx,hk.by,8,0,Math.PI*2);ctx.stroke();
+  }
   // Seagull
   const g=hk.gull;
   if(g.active){
@@ -790,7 +915,16 @@ function drawHackySack(){
     T('+'+hk.trickPts+' pts',W/2,H/2+4,'#00ff88',10);
     ctx.globalAlpha=1;
   }
-  T('←→ MOVE   SPACE CHASE BALL   Walk into it to kick!',W/2,H-5,'rgba(255,255,255,0.4)',7);
+  if(pw.active){
+    const bw=160,bh=9,bx=W/2-80,by=H-22;
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(bx-2,by-2,bw+4,bh+4);
+    const frac=Math.max(0,pw.timer/10);
+    const barCol=frac>0.4?'#ffdd00':'#ff4400';
+    ctx.fillStyle=barCol;ctx.fillRect(bx,by,bw*frac,bh);
+    T('⚡ SUPER MODE  ←→↑↓ FLY   SPACE = SHOOT',W/2,H-5,'rgba(255,255,0,0.7)',7);
+  } else {
+    T('←→ MOVE   SPACE CHASE BALL   Walk into it to kick!',W/2,H-5,'rgba(255,255,255,0.4)',7);
+  }
   if(hk.phase==='end')drawEnd('TIME\'S UP!',hk.score,'KICKS: '+hk.kicks,'#00ff88',HS.hackySack);
 }
 
