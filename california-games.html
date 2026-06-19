@@ -1145,16 +1145,16 @@ function updateSurfing(dt){
   sf.barrelR+=(tR-sf.barrelR)*0.05;
 
   // ↑↓ — vertical position on wave face
-  if(keys['ArrowUp'])   sf.surferVY-=252*dt;
-  if(keys['ArrowDown']) sf.surferVY+=252*dt;
-  sf.surferVY*=0.85;
+  if(keys['ArrowUp'])   sf.surferVY-=340*dt;
+  if(keys['ArrowDown']) sf.surferVY+=340*dt;
+  sf.surferVY*=0.88;
   sf.surferY+=sf.surferVY*dt;
   sf.surferY=Math.max(H*0.1,Math.min(H*0.84,sf.surferY));
 
   // ← = accelerate into barrel  → = ease off
-  if(keys['ArrowLeft'])  sf.rideVX-=1.08*dt;
-  if(keys['ArrowRight']) sf.rideVX+=0.84*dt;
-  sf.rideVX*=0.88;
+  if(keys['ArrowLeft'])  sf.rideVX-=1.52*dt;
+  if(keys['ArrowRight']) sf.rideVX+=1.18*dt;
+  sf.rideVX*=0.90;
   sf.rideX+=sf.rideVX+0.22*dt;  // wave naturally pushes you forward
   sf.rideX=Math.max(-1.4,Math.min(1.4,sf.rideX));
 
@@ -1186,7 +1186,7 @@ function updateSurfing(dt){
   // In-barrel check
   const dy=sf.surferY-sf.barrelY;
   const dx=sf.rideX*75;
-  sf.inBarrel=Math.sqrt(dx*dx+dy*dy)<sf.barrelR*0.88;
+  sf.inBarrel=Math.sqrt(dx*dx+dy*dy)<sf.barrelR*1.01;
 
   if(sf.inBarrel){
     sf.score+=22*dt*player.bonus('surfing')*(1+sf.combo*0.28);
