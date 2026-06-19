@@ -680,7 +680,7 @@ function updateHackySack(dt){
     if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-8);
     if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+8);
     // Vertical jump/smash
-    if(pw.hulkPy>=H-78){
+    if(pw.hulkPy>=H-78&&pw.hulkVy>=0){
       pw.hulkPy=H-78;pw.hulkVy=0;
       if(pw.hulkSmashing){
         pw.hulkSmashing=false;
@@ -699,13 +699,13 @@ function updateHackySack(dt){
           hk.score+=pts;hk.bonusTxt='SMASH \xd7'+killed+'! +'+pts;hk.bonusTxtT=1.8;sfx.smash();
         } else {sfx.smash();}
       }
-      if(kp['Space']){pw.hulkVy=-420;sfx.hulkSmash();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
+      if(kp['Space']){pw.hulkVy=-600;pw.hulkPy=H-80;sfx.hulkSmash();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
     } else {
-      pw.hulkVy+=560*dt;
+      pw.hulkVy+=240*dt; // low gravity — Hulk resists it
       pw.hulkPy+=pw.hulkVy*dt;
       if(pw.hulkPy>=H-78){pw.hulkPy=H-78;}
-      // Smash dive
-      if(kp['Space']&&!pw.hulkSmashing&&pw.hulkVy>-100){pw.hulkSmashing=true;pw.hulkVy=580;sfx.hulkSmash();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
+      // Smash dive — any point in the air
+      if(kp['Space']&&!pw.hulkSmashing){pw.hulkSmashing=true;pw.hulkVy=620;sfx.hulkSmash();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
       // Kill zombie gulls on contact while jumping
       pw.zombieGulls.forEach(zg=>{
         if(zg.dead)return;
