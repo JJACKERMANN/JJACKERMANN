@@ -3097,7 +3097,7 @@ function initCareer(){
     rivals:[],standings:[],
     storyQueue:[],storyPanelIdx:0,storySceneId:null,storyFlags:new Set(),
     completedEvents:new Set(),
-    hubSel:0,mapSel:0,jobSel:0,shopSel:0,
+    hubSel:0,mapSel:0,jobSel:0,shopSel:0,hubTick:0,
     ended:false,endReason:'',weekMsg:'',weekMsgT:0,
     availableEvents:[],availableJobs:[],
     repToNextTier:[30,80,150,9999],
@@ -3212,15 +3212,212 @@ function _crFinishEvent(sport,rawScore){
 const CR_HUB_OPTS=['ENTER EVENT','GET A JOB','VISIT SHOP','STANDINGS','REST'];
 const CR_HUB_HINTS=['Choose a competition to enter','Take a job to earn cash','Upgrade gear or lifestyle','Check season standings','Skip a week to recover (+health)'];
 
-function updateCareerHub(){
+// Sport colours and letters — used by hub AND map
+const CR_SPORT_COLS={
+  hackySack:'#ff6600',surfing:'#00aaff',halfpipe:'#ff00ff',
+  bmx:'#ff4400',frisbee:'#00ff88',snowboard:'#88ddff',
+};
+const CR_SPORT_LETTS={
+  hackySack:'H',surfing:'S',halfpipe:'P',bmx:'B',frisbee:'F',snowboard:'N',
+};
+
+// ── CAREER HUB — scene layout ─────────────────────────────────────────────────
+const CR_HUB_NODES=[
+  {id:0,label:'EVENTS',   sub:'Choose a Competition', x:200,y:210,icon:'events'},
+  {id:1,label:'JOBS',     sub:'Earn Weekly Income',   x:345,y:262,icon:'job'},
+  {id:2,label:'SHOP',     sub:'Buy Gear & Upgrades',  x:482,y:205,icon:'shop'},
+  {id:3,label:'STANDINGS',sub:'Season Rankings',      x:580,y:262,icon:'trophy'},
+  {id:4,label:'HOME',     sub:'Rest & Recover',       x:78, y:262,icon:'van'},
+];
+
+function _crHubNav(dir){
+  const cur=CR_HUB_NODES[cr.hubSel];
+  let best=null,bestScore=Infinity;
+  CR_HUB_NODES.forEach(n=>{
+    if(n.id===cr.hubSel)return;
+    const dx=n.x-cur.x,dy=n.y-cur.y;
+    let ok=false;
+    if(dir==='right'&&dx>20)ok=true;
+    if(dir==='left' &&dx<-20)ok=true;
+    if(dir==='down' &&dy>20)ok=true;
+    if(dir==='up'   &&dy<-20)ok=true;
+    if(!ok)return;
+    const perp=(dir==='right'||dir==='left')?Math.abs(dy):Math.abs(dx);
+    const para=(dir==='right'||dir==='left')?Math.abs(dx):Math.abs(dy);
+    const score=perp*2+para;
+    if(score<bestScore){bestScore=score;best=n.id;}
+  });
+  if(best!==null)cr.hubSel=best;
+  else cr.hubSel=(dir==='right'||dir==='down')?(cr.hubSel+1)%CR_HUB_NODES.length:(cr.hubSel-1+CR_HUB_NODES.length)%CR_HUB_NODES.length;
+  sfx.tick();
+}
+
+// ── Hub landmark drawing helpers ──────────────────────────────────────────────
+function _crHubVan(cx,cy,sel){
+  ctx.save();
+  if(sel){ctx.shadowColor='#ffaa00';ctx.shadowBlur=18;}
+  // Body
+  ctx.fillStyle=sel?'#cc5500':'#552200';ctx.fillRect(cx-38,cy-22,76,34);
+  // Cabin
+  ctx.fillStyle=sel?'#dd6600':'#662200';ctx.fillRect(cx+6,cy-36,32,16);
+  // Windows
+  ctx.fillStyle=sel?'#88ccff':'#1a3344';
+  ctx.fillRect(cx+10,cy-34,12,12);ctx.fillRect(cx+24,cy-34,12,12);
+  ctx.fillRect(cx-30,cy-15,18,11);ctx.fillRect(cx-8,cy-15,14,11);
+  // Racing stripe
+  ctx.fillStyle=sel?'#ff8800':'#331100';ctx.fillRect(cx-38,cy-4,76,5);
+  // Wheels
+  [cx-22,cx+22].forEach(wx=>{
+    ctx.fillStyle='#111';ctx.beginPath();ctx.arc(wx,cy+14,10,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#444';ctx.beginPath();ctx.arc(wx,cy+14,4,0,Math.PI*2);ctx.fill();
+  });
+  ctx.fillStyle=sel?'#ffffaa':'#666600';ctx.fillRect(cx+36,cy-8,5,7);
+  // Resting ZZZs
+  if(sel){
+    ctx.fillStyle='rgba(255,255,80,0.9)';ctx.font='bold 8px monospace';ctx.textAlign='left';
+    ctx.fillText('z',cx+43,cy-26);ctx.fillText('z',cx+50,cy-36);ctx.fillText('Z',cx+55,cy-46);
+    ctx.textAlign='left';
+  }
+  ctx.restore();
+}
+
+function _crHubEvents(cx,cy,sel){
+  ctx.save();
+  if(sel){ctx.shadowColor='#ffff00';ctx.shadowBlur=20;}
+  // Post + crossbeams
+  ctx.fillStyle='#3a1800';ctx.fillRect(cx-5,cy-88,10,106);
+  ctx.fillRect(cx-66,cy-72,6,24);ctx.fillRect(cx+60,cy-72,6,24);
+  // Billboard backing
+  ctx.fillStyle=sel?'#0e0e32':'#060614';
+  ctx.fillRect(cx-62,cy-92,124,64);
+  ctx.strokeStyle=sel?'#ffff00':'#22224a';ctx.lineWidth=sel?2:1;
+  ctx.strokeRect(cx-62,cy-92,124,64);
+  // Sport icons in 2×3 grid
+  const sports=['hackySack','surfing','halfpipe','bmx','frisbee','snowboard'];
+  sports.forEach((sp,i)=>{
+    const bx=cx-44+i%3*44,by=cy-78+Math.floor(i/3)*30;
+    const col=CR_SPORT_COLS[sp];
+    ctx.globalAlpha=sel?0.9:0.4;
+    ctx.fillStyle=col+'44';
+    ctx.beginPath();ctx.arc(bx,by,12,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=sel?1:0.45;
+    ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(bx,by,12,0,Math.PI*2);ctx.stroke();
+    _crMapIcon(sp,bx,by,9,sel?'#000':'rgba(0,0,0,0.7)');
+  });
+  ctx.globalAlpha=1;
+  // Pennant flag on top
+  ctx.fillStyle=sel?'#ff6600':'#441100';
+  ctx.beginPath();ctx.moveTo(cx-58,cy-92);ctx.lineTo(cx-36,cy-99);ctx.lineTo(cx-58,cy-106);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+function _crHubJob(cx,cy,sel){
+  ctx.save();
+  if(sel){ctx.shadowColor='#00ff88';ctx.shadowBlur=16;}
+  ctx.fillStyle='#3a1800';ctx.fillRect(cx-4,cy-66,8,76);
+  ctx.fillStyle=sel?'#0a1a00':'#060e00';
+  ctx.fillRect(cx-46,cy-70,92,48);
+  ctx.strokeStyle=sel?'#00ff88':'#112a00';ctx.lineWidth=1.5;
+  ctx.strokeRect(cx-46,cy-70,92,48);
+  ctx.font='bold 8px monospace';ctx.textAlign='center';
+  ctx.fillStyle=sel?'#00ff88':'#226622';ctx.fillText('HELP',cx,cy-56);
+  ctx.fillStyle=sel?'#aaff00':'#336622';ctx.fillText('WANTED',cx,cy-44);
+  ctx.fillStyle=sel?'#ffff00':'#446600';ctx.font='bold 11px monospace';
+  ctx.fillText('$$$',cx,cy-28);
+  // Tack nails
+  ctx.fillStyle='#555';
+  [[-42,-66],[42,-66],[-42,-26],[42,-26]].forEach(([ox,oy])=>{
+    ctx.beginPath();ctx.arc(cx+ox,cy+oy,2,0,Math.PI*2);ctx.fill();
+  });
+  ctx.textAlign='left';ctx.restore();
+}
+
+function _crHubShop(cx,cy,sel){
+  ctx.save();
+  if(sel){ctx.shadowColor='#ffaa00';ctx.shadowBlur=16;}
+  // Body
+  ctx.fillStyle=sel?'#130720':'#090412';
+  ctx.fillRect(cx-54,cy-68,108,72);
+  ctx.strokeStyle=sel?'#ff8800':'#221100';ctx.lineWidth=sel?2:1;
+  ctx.strokeRect(cx-54,cy-68,108,72);
+  // Striped awning
+  for(let si=0;si<6;si++){
+    ctx.fillStyle=(si%2===0)?(sel?'#cc4400':'#661100'):(sel?'#ff6600':'#882200');
+    ctx.fillRect(cx-56+si*19,cy-76,19,10);
+  }
+  ctx.strokeStyle='#111';ctx.lineWidth=0.5;ctx.strokeRect(cx-56,cy-76,112,10);
+  // Shop name
+  ctx.font='bold 9px monospace';ctx.textAlign='center';
+  ctx.fillStyle=sel?'#ffee00':'#887700';ctx.fillText('SURF SHOP',cx,cy-52);
+  // Display window
+  ctx.fillStyle=sel?'#204060':'#0c1e2c';
+  ctx.fillRect(cx-38,cy-36,38,30);ctx.fillRect(cx+4,cy-36,36,30);
+  // Surfboard in left window
+  ctx.fillStyle=sel?'#00aaff':'#003366';
+  ctx.save();ctx.translate(cx-19,cy-21);ctx.rotate(-0.22);
+  ctx.beginPath();ctx.ellipse(0,0,4,16,0,0,Math.PI*2);ctx.fill();ctx.restore();
+  // Hacky sack icon in right window
+  ctx.fillStyle=sel?'#ff6600':'#442200';
+  ctx.beginPath();ctx.arc(cx+22,cy-20,7,0,Math.PI*2);ctx.fill();
+  _crMapIcon('hackySack',cx+22,cy-20,5,sel?'#000':'rgba(0,0,0,0.6)');
+  // Door
+  ctx.fillStyle=sel?'#1a1a3a':'#0a0a1e';
+  ctx.fillRect(cx+16,cy-26,18,28);ctx.fillRect(cx+26,cy-14,4,5);
+  ctx.textAlign='left';ctx.restore();
+}
+
+function _crHubTrophy(cx,cy,sel){
+  ctx.save();
+  if(sel){ctx.shadowColor='#ff00ff';ctx.shadowBlur=20;}
+  const col=sel?'#ffdd00':'#886600';
+  // Bowl
+  ctx.fillStyle=col;
+  ctx.beginPath();
+  ctx.moveTo(cx-26,cy-62);
+  ctx.quadraticCurveTo(cx-32,cy-40,cx-20,cy-18);
+  ctx.lineTo(cx-8,cy-8);ctx.lineTo(cx+8,cy-8);
+  ctx.lineTo(cx+20,cy-18);
+  ctx.quadraticCurveTo(cx+32,cy-40,cx+26,cy-62);
+  ctx.closePath();ctx.fill();
+  // Inner sheen
+  ctx.fillStyle=sel?'rgba(255,255,255,0.18)':'rgba(255,255,255,0.04)';
+  ctx.beginPath();ctx.ellipse(cx-6,cy-44,6,16,Math.PI*0.18,0,Math.PI*2);ctx.fill();
+  // Handles
+  ctx.strokeStyle=col;ctx.lineWidth=4;
+  ctx.beginPath();ctx.arc(cx-28,cy-38,10,Math.PI*0.45,Math.PI*1.55);ctx.stroke();
+  ctx.beginPath();ctx.arc(cx+28,cy-38,10,-Math.PI*0.55,Math.PI*0.55);ctx.stroke();
+  // Stem + base
+  ctx.fillStyle=sel?'#cc8800':'#554400';ctx.fillRect(cx-7,cy-8,14,16);
+  ctx.fillStyle=col;ctx.fillRect(cx-22,cy+8,44,9);ctx.fillRect(cx-16,cy+4,32,6);
+  // "1ST" text
+  ctx.fillStyle=sel?'#000':'#333';ctx.font='bold 8px monospace';ctx.textAlign='center';
+  ctx.fillText('1ST',cx,cy-38);
+  // Star
+  ctx.fillStyle=sel?'#fff':'#aaa';
+  ctx.beginPath();
+  for(let si=0;si<5;si++){
+    const a=si/5*Math.PI*2-Math.PI/2,a2=(si+0.5)/5*Math.PI*2-Math.PI/2;
+    const m=si===0?'moveTo':'lineTo';
+    ctx[m](cx+Math.cos(a)*12,cy-72+Math.sin(a)*12);
+    ctx.lineTo(cx+Math.cos(a2)*5,cy-72+Math.sin(a2)*5);
+  }
+  ctx.closePath();ctx.fill();
+  ctx.textAlign='left';ctx.restore();
+}
+
+function updateCareerHub(dt){
+  cr.hubTick=(cr.hubTick||0)+dt;
   if(cr.storyQueue.length>0){
     cr.storySceneId=cr.storyQueue.shift();
     cr.storyPanelIdx=0;
     state='careerStory';
     return;
   }
-  if(kp['ArrowUp']){cr.hubSel=(cr.hubSel-1+CR_HUB_OPTS.length)%CR_HUB_OPTS.length;sfx.tick();}
-  if(kp['ArrowDown']){cr.hubSel=(cr.hubSel+1)%CR_HUB_OPTS.length;sfx.tick();}
+  if(kp['ArrowUp'])   _crHubNav('up');
+  if(kp['ArrowDown']) _crHubNav('down');
+  if(kp['ArrowLeft']) _crHubNav('left');
+  if(kp['ArrowRight'])_crHubNav('right');
   if(kp['Enter']){
     sfx.sel();
     if(cr.hubSel===0){state='careerMap';cr.mapSel=0;}
@@ -3236,35 +3433,105 @@ function updateCareerHub(){
   }
 }
 function drawCareerHub(){
-  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
-  const tierCol=['#aaaaaa','#ffaa00','#ff6600','#ff00ff'][cr.tier];
-  T(CR_TIERS[cr.tier]+' • WK '+cr.week+' S'+cr.season,W/2,20,tierCol,7);
-  T(player.name+"'S CAREER HUB",W/2,38,'#ffff00',12);
-  ctx.fillStyle='#2a2a44';ctx.fillRect(20,50,W-40,1);
-  const sy=64;
-  T('$'+cr.money,70,sy,'#00ff00',7);
-  T('REP:'+cr.rep,152,sy,'#ffaa00',7);
-  T('HP:'+cr.health,220,sy,cr.health>60?'#00ff00':cr.health>30?'#ffaa00':'#ff0000',7);
-  T('FAT:'+cr.fatigue,288,sy,cr.fatigue<50?'#00ff00':'#ff4400',7);
-  T('PTS:'+cr.seasonPts,360,sy,'#00aaff',7);
-  ctx.fillStyle='#2a2a44';ctx.fillRect(20,74,W-40,1);
-  CR_HUB_OPTS.forEach((opt,i)=>{
-    const y=94+i*46,sel=cr.hubSel===i;
-    ctx.fillStyle=sel?'#0f0f28':'#080818';
-    ctx.fillRect(28,y-18,W-56,40);
-    ctx.strokeStyle=sel?'#ffff00':'#222';
-    ctx.lineWidth=1;
-    ctx.strokeRect(28,y-18,W-56,40);
-    T(opt,W/2,y+2,sel?'#ffff00':'#666',9);
-    if(sel)T(CR_HUB_HINTS[i],W/2,y+18,'#888',6);
+  const t=cr.hubTick||0;
+  // ── sky ────────────────────────────────────────────────────────────────────
+  const sky=ctx.createLinearGradient(0,0,0,260);
+  sky.addColorStop(0,'#03030f');sky.addColorStop(0.5,'#170930');sky.addColorStop(1,'#280a16');
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,260);
+  // Stars (seeded by index for stable positions)
+  for(let si=0;si<55;si++){
+    const sx=(si*137+23)%640,sy=(si*97+11)%200;
+    const sb=0.2+0.5*Math.sin(t*1.9+si*0.73);
+    ctx.fillStyle=`rgba(255,255,255,${sb*0.75})`;ctx.fillRect(sx,sy,1,1);
+  }
+  // Horizon glow
+  const glow=ctx.createRadialGradient(W*0.68,215,0,W*0.68,215,210);
+  glow.addColorStop(0,'rgba(255,80,0,0.22)');glow.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=glow;ctx.fillRect(0,60,W,260);
+  // ── ocean (left)───────────────────────────────────────────────────────────
+  ctx.fillStyle='#010a14';ctx.fillRect(0,224,105,176);
+  ctx.strokeStyle='rgba(0,70,150,0.3)';ctx.lineWidth=1;
+  for(let wi=0;wi<4;wi++){
+    const wy=234+wi*9;
+    ctx.beginPath();
+    for(let wx=0;wx<=104;wx+=3){
+      const wh=Math.sin((wx+t*38+wi*28)/13)*1.5;
+      wx===0?ctx.moveTo(wx,wy+wh):ctx.lineTo(wx,wy+wh);
+    }
+    ctx.stroke();
+  }
+  // ── sand ground ───────────────────────────────────────────────────────────
+  const sand=ctx.createLinearGradient(0,224,0,H);
+  sand.addColorStop(0,'#170f04');sand.addColorStop(1,'#0a0700');
+  ctx.fillStyle=sand;ctx.fillRect(105,224,W-105,176);
+  // Sand grain dots
+  ctx.fillStyle='rgba(28,18,4,0.55)';
+  for(let gi=0;gi<90;gi++){
+    ctx.fillRect((gi*97+33)%535+105,(gi*73+17)%90+244,2,1);
+  }
+  // ── boardwalk ─────────────────────────────────────────────────────────────
+  ctx.fillStyle='#1c1005';ctx.fillRect(0,248,W,18);
+  ctx.strokeStyle='#100904';ctx.lineWidth=1;
+  for(let bx=0;bx<W;bx+=20){ctx.beginPath();ctx.moveTo(bx,248);ctx.lineTo(bx,266);ctx.stroke();}
+  ctx.strokeStyle='#231408';ctx.lineWidth=0.6;
+  ctx.beginPath();ctx.moveTo(0,248);ctx.lineTo(W,248);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(0,266);ctx.lineTo(W,266);ctx.stroke();
+  // ── ground shadows ────────────────────────────────────────────────────────
+  CR_HUB_NODES.forEach(n=>{
+    ctx.fillStyle='rgba(0,0,0,0.3)';
+    ctx.beginPath();ctx.ellipse(n.x,283,36,6,0,0,Math.PI*2);ctx.fill();
   });
+  // ── landmarks ────────────────────────────────────────────────────────────
+  CR_HUB_NODES.forEach(n=>{
+    const sel=cr.hubSel===n.id;
+    if(n.icon==='van')    _crHubVan(n.x,n.y,sel);
+    if(n.icon==='events') _crHubEvents(n.x,n.y,sel);
+    if(n.icon==='job')    _crHubJob(n.x,n.y,sel);
+    if(n.icon==='shop')   _crHubShop(n.x,n.y,sel);
+    if(n.icon==='trophy') _crHubTrophy(n.x,n.y,sel);
+  });
+  // ── node labels ───────────────────────────────────────────────────────────
+  CR_HUB_NODES.forEach(n=>{
+    const sel=cr.hubSel===n.id;
+    ctx.globalAlpha=sel?1:0.4;
+    T(n.label,n.x,n.y+30,sel?'#ffff00':'#888',sel?7:6);
+    ctx.globalAlpha=1;
+  });
+  // Pulsing selection arrow
+  const sn=CR_HUB_NODES[cr.hubSel];
+  const pulse=0.55+0.45*Math.sin(t*5.2);
+  ctx.globalAlpha=pulse;ctx.fillStyle='#ffff00';
+  ctx.font='bold 13px monospace';ctx.textAlign='center';
+  ctx.fillText('▼',sn.x,sn.y-100);
+  ctx.textAlign='left';ctx.globalAlpha=1;
+  // ── stats bar (top) ───────────────────────────────────────────────────────
+  ctx.fillStyle='rgba(2,2,12,0.95)';ctx.fillRect(0,0,W,34);
+  ctx.strokeStyle='#1a1a3a';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,34);ctx.lineTo(W,34);ctx.stroke();
+  const tierCol=['#aaaaaa','#ffaa00','#ff6600','#ff00ff'][cr.tier];
+  T(player.name,16,22,'#ffff00',8);
+  T(CR_TIERS[cr.tier],118,22,tierCol,7);
+  T('WK'+cr.week+'/S'+cr.season,190,22,'#555',6);
+  T('$'+cr.money,262,22,cr.money>0?'#00ff00':'#ff0000',8);
+  T('REP:'+cr.rep,340,22,'#ffaa00',7);
+  T('HP:'+cr.health,410,22,cr.health>60?'#00ff00':cr.health>30?'#ffaa00':'#ff0000',7);
+  T('FAT:'+cr.fatigue+'%',482,22,cr.fatigue<50?'#00ff00':'#ff4400',7);
+  T('PTS:'+cr.seasonPts,558,22,'#00aaff',7);
+  // ── info bar (bottom) ─────────────────────────────────────────────────────
+  ctx.fillStyle='rgba(2,2,12,0.95)';ctx.fillRect(0,362,W,38);
+  ctx.strokeStyle='#1a1a3a';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,362);ctx.lineTo(W,362);ctx.stroke();
+  T(sn.label,W/2,378,'#ffff00',9);
+  T(sn.sub,W/2,392,'#666',7);
+  T('ARROWS NAVIGATE   ENTER SELECT',W/2,H-2,'#2a2a44',5);
+  // ── flash message ─────────────────────────────────────────────────────────
   if(cr.weekMsgT>0){
     cr.weekMsgT-=0.016;
     ctx.globalAlpha=Math.min(1,cr.weekMsgT);
-    T(cr.weekMsg,W/2,H-26,'#ffff00',8);
+    ctx.fillStyle='rgba(0,0,0,0.78)';ctx.fillRect(W/2-178,292,356,32);
+    T(cr.weekMsg,W/2,314,'#ffff00',8);
     ctx.globalAlpha=1;
   }
-  T('HOME: '+cr.home.toUpperCase()+'  RENT: $'+cr.weeklyRent+'/wk',W/2,H-10,'#444',6);
 }
 
 // ── CAREER MAP ────────────────────────────────────────────────────────────────
@@ -3288,13 +3555,6 @@ const CR_MAP_NODES={
   world_pipe:     {x:350, y:108},
   world_surf:     {x:30,  y:362},
   world_bmx:      {x:350, y:148},
-};
-const CR_SPORT_COLS={
-  hackySack:'#ff6600',surfing:'#00aaff',halfpipe:'#ff00ff',
-  bmx:'#ff4400',frisbee:'#00ff88',snowboard:'#88ddff',
-};
-const CR_SPORT_LETTS={
-  hackySack:'H',surfing:'S',halfpipe:'P',bmx:'B',frisbee:'F',snowboard:'N',
 };
 const CR_TIER_COLS=['#aaaaaa','#ffaa00','#ff6600','#ff00ff'];
 const CR_TIER_LABELS=['ROOKIE','PRO','ELITE','LEGEND'];
@@ -3323,6 +3583,57 @@ function _crMapNav(dir){
   if(best!==null)cr.mapSel=best;
   else cr.mapSel=(dir==='right'||dir==='down')?(cr.mapSel+1)%evs.length:(cr.mapSel-1+evs.length)%evs.length;
   sfx.tick();
+}
+
+function _crMapIcon(sport,cx,cy,r,col){
+  ctx.save();
+  ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=Math.max(0.8,r/6);
+  const s=r*0.85;
+  if(sport==='hackySack'){
+    ctx.beginPath();ctx.arc(cx,cy,s,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<3;i++){
+      const a=i*Math.PI/3;
+      ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*s,cy+Math.sin(a)*s);
+      ctx.lineTo(cx+Math.cos(a+Math.PI)*s,cy+Math.sin(a+Math.PI)*s);ctx.stroke();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,s*0.22,0,Math.PI*2);ctx.fill();
+  } else if(sport==='surfing'){
+    ctx.lineWidth=Math.max(1.2,r/4.5);
+    ctx.beginPath();
+    ctx.moveTo(cx-s,cy+s*0.35);
+    ctx.quadraticCurveTo(cx-s*0.2,cy-s*0.65,cx,cy);
+    ctx.quadraticCurveTo(cx+s*0.2,cy+s*0.65,cx+s,cy-s*0.35);
+    ctx.stroke();
+  } else if(sport==='halfpipe'){
+    ctx.lineWidth=Math.max(1.2,r/4.5);
+    ctx.beginPath();
+    ctx.moveTo(cx-s,cy-s*0.55);
+    ctx.lineTo(cx-s,cy+s*0.05);
+    ctx.arc(cx,cy+s*0.05,s,Math.PI,0);
+    ctx.lineTo(cx+s,cy-s*0.55);
+    ctx.stroke();
+  } else if(sport==='bmx'){
+    ctx.beginPath();ctx.arc(cx,cy,s,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<4;i++){
+      const a=i*Math.PI/4;
+      ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*s*0.35,cy+Math.sin(a)*s*0.35);
+      ctx.lineTo(cx+Math.cos(a)*s,cy+Math.sin(a)*s);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(cx-Math.cos(a)*s*0.35,cy-Math.sin(a)*s*0.35);
+      ctx.lineTo(cx-Math.cos(a)*s,cy-Math.sin(a)*s);ctx.stroke();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,s*0.22,0,Math.PI*2);ctx.fill();
+  } else if(sport==='frisbee'){
+    ctx.beginPath();ctx.ellipse(cx,cy+s*0.22,s,s*0.38,0,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(cx,cy-s*0.08,s*0.5,s*0.18,0,Math.PI,Math.PI*2);ctx.fill();
+  } else if(sport==='snowboard'){
+    ctx.beginPath();ctx.roundRect(cx-s,cy-s*0.22,s*2,s*0.44,s*0.22);ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,0.35)';
+    ctx.fillRect(cx-s*0.55,cy-s*0.22,s*0.28,s*0.44);
+    ctx.fillRect(cx+s*0.27,cy-s*0.22,s*0.28,s*0.44);
+    ctx.fillStyle=col;
+    for(let k=-1;k<=1;k++){ctx.beginPath();ctx.arc(cx+k*s*0.55,cy-s*0.58,s*0.1,0,Math.PI*2);ctx.fill();}
+  }
+  ctx.restore();
 }
 
 function updateCareerMap(){
@@ -3446,12 +3757,8 @@ function drawCareerMap(){
       ctx.beginPath();ctx.arc(n.x,n.y,6,0,Math.PI*2);ctx.fill();
       ctx.globalAlpha=1;
     }
-    // Sport letter
-    ctx.fillStyle=sel?'#000':'rgba(0,0,0,0.7)';
-    ctx.font='bold '+(sel?8:6)+'px monospace';
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(CR_SPORT_LETTS[ev.sport]||'?',n.x,n.y);
-    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    // Sport icon
+    _crMapIcon(ev.sport,n.x,n.y,sel?7:4.5,sel?'#000':'rgba(0,0,0,0.8)');
   });
 
   // ── info panel (right side) ────────────────────────────────────────────────
@@ -3480,10 +3787,7 @@ function drawCareerMap(){
     // Sport icon + location
     ctx.fillStyle=col;
     ctx.beginPath();ctx.arc(PX+26,106,13,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#000';
-    ctx.font='bold 11px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(CR_SPORT_LETTS[ev.sport]||'?',PX+26,106);
-    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    _crMapIcon(ev.sport,PX+26,106,10,'#000');
     ctx.font='bold 8px monospace';ctx.fillStyle=col;
     ctx.fillText(ev.sport.replace(/([A-Z])/g,' $1').toUpperCase().trim(),PX+46,101);
     ctx.fillStyle='#8888aa';ctx.font='bold 6px monospace';
