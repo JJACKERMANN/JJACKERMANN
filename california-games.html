@@ -610,11 +610,11 @@ function updateHackySack(dt){
     if(pw.shootCD>0)pw.shootCD-=dt;
 
     // Flight
-    if(keys['ArrowLeft']) pw.pvx-=600*dt;
-    if(keys['ArrowRight'])pw.pvx+=600*dt;
-    if(keys['ArrowUp'])   pw.pvy-=600*dt;
-    if(keys['ArrowDown']) pw.pvy+=600*dt;
-    pw.pvx*=0.85;pw.pvy*=0.85;
+    if(keys['ArrowLeft']) pw.pvx-=960*dt;
+    if(keys['ArrowRight'])pw.pvx+=960*dt;
+    if(keys['ArrowUp'])   pw.pvy-=960*dt;
+    if(keys['ArrowDown']) pw.pvy+=960*dt;
+    pw.pvx*=0.90;pw.pvy*=0.90;
     hk.px=Math.max(22,Math.min(W-22,hk.px+pw.pvx*dt));
     hk.py=Math.max(55,Math.min(H-40,hk.py+pw.pvy*dt));
 
