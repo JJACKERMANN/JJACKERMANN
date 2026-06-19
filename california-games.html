@@ -3268,12 +3268,71 @@ function drawCareerHub(){
 }
 
 // ── CAREER MAP ────────────────────────────────────────────────────────────────
-function updateCareerMap(){
+// Canvas-coordinate positions for each event node on the interactive map
+const CR_MAP_NODES={
+  venice_hs:      {x:85,  y:320},
+  malibu_surf:    {x:67,  y:304},
+  sb_pipe:        {x:55,  y:280},
+  la_bmx:         {x:105, y:328},
+  frisco_fris:    {x:47,  y:210},
+  tahoe_snow:     {x:200, y:186},
+  huntington_surf:{x:115, y:338},
+  sf_pipe:        {x:57,  y:222},
+  big_bmx:        {x:126, y:188},
+  maui_surf:      {x:36,  y:370},
+  nationals_hs:   {x:63,  y:132},
+  pipe_masters:   {x:295, y:222},
+  pacific_bmx:    {x:77,  y:100},
+  snowboard_elite:{x:307, y:237},
+  world_games:    {x:118, y:368},
+  world_pipe:     {x:350, y:108},
+  world_surf:     {x:30,  y:362},
+  world_bmx:      {x:350, y:148},
+};
+const CR_SPORT_COLS={
+  hackySack:'#ff6600',surfing:'#00aaff',halfpipe:'#ff00ff',
+  bmx:'#ff4400',frisbee:'#00ff88',snowboard:'#88ddff',
+};
+const CR_SPORT_LETTS={
+  hackySack:'H',surfing:'S',halfpipe:'P',bmx:'B',frisbee:'F',snowboard:'N',
+};
+const CR_TIER_COLS=['#aaaaaa','#ffaa00','#ff6600','#ff00ff'];
+const CR_TIER_LABELS=['ROOKIE','PRO','ELITE','LEGEND'];
+
+function _crMapNav(dir){
   const evs=cr.availableEvents;
+  if(!evs.length)return;
+  const cur=CR_MAP_NODES[evs[cr.mapSel]?.id];
+  if(!cur)return;
+  let best=null,bestScore=Infinity;
+  evs.forEach((ev,i)=>{
+    if(i===cr.mapSel)return;
+    const n=CR_MAP_NODES[ev.id];if(!n)return;
+    const dx=n.x-cur.x,dy=n.y-cur.y;
+    let ok=false;
+    if(dir==='right'&&dx>12)ok=true;
+    if(dir==='left' &&dx<-12)ok=true;
+    if(dir==='down' &&dy>12)ok=true;
+    if(dir==='up'   &&dy<-12)ok=true;
+    if(!ok)return;
+    const perp=(dir==='right'||dir==='left')?Math.abs(dy):Math.abs(dx);
+    const para=(dir==='right'||dir==='left')?Math.abs(dx):Math.abs(dy);
+    const score=perp*2.5+para;
+    if(score<bestScore){bestScore=score;best=i;}
+  });
+  if(best!==null)cr.mapSel=best;
+  else cr.mapSel=(dir==='right'||dir==='down')?(cr.mapSel+1)%evs.length:(cr.mapSel-1+evs.length)%evs.length;
+  sfx.tick();
+}
+
+function updateCareerMap(){
   if(kp['Escape']){state='careerHub';sfx.sel();return;}
-  if(evs.length===0){return;}
-  if(kp['ArrowUp']){cr.mapSel=(cr.mapSel-1+evs.length)%evs.length;sfx.tick();}
-  if(kp['ArrowDown']){cr.mapSel=(cr.mapSel+1)%evs.length;sfx.tick();}
+  const evs=cr.availableEvents;
+  if(!evs.length)return;
+  if(kp['ArrowUp'])   _crMapNav('up');
+  if(kp['ArrowDown']) _crMapNav('down');
+  if(kp['ArrowLeft']) _crMapNav('left');
+  if(kp['ArrowRight'])_crMapNav('right');
   if(kp['Enter']){
     const ev=evs[cr.mapSel];
     if(cr.money<ev.entry){cr.weekMsg='NOT ENOUGH MONEY!';cr.weekMsgT=2;state='careerHub';return;}
@@ -3287,34 +3346,201 @@ function updateCareerMap(){
     sfx.sel();
   }
 }
+
 function drawCareerMap(){
+  // ── title bar ──────────────────────────────────────────────────────────────
   ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
-  T('CHOOSE AN EVENT',W/2,28,'#ffff00',12);
-  ctx.fillStyle='#2a2a44';ctx.fillRect(20,42,W-40,1);
-  const evs=cr.availableEvents;
-  if(evs.length===0){
-    T('NO EVENTS AVAILABLE',W/2,H/2,'#ff4400',9);
-    T('Earn more REP to unlock higher tiers.',W/2,H/2+22,'#666',7);
-    T('ESC = BACK',W/2,H-14,'#444',6);
-    return;
+  T('EVENT MAP',W/2,22,'#ffff00',12);
+  ctx.fillStyle='#1a1a2e';ctx.fillRect(0,32,W,2);
+
+  // ── map background ─────────────────────────────────────────────────────────
+  // Ocean
+  ctx.fillStyle='#010b18';
+  ctx.fillRect(5,36,383,352);
+
+  // Land mass (Western USA coast → east)
+  ctx.fillStyle='#0b190a';
+  ctx.beginPath();
+  ctx.moveTo(83, 36); // WA top
+  ctx.lineTo(83, 98); ctx.lineTo(69,130); ctx.lineTo(51,165);
+  ctx.lineTo(44,210); ctx.lineTo(53,258); ctx.lineTo(69,282);
+  ctx.lineTo(86,314); ctx.lineTo(120,385);// CA coast → Mexico
+  ctx.lineTo(388,385);ctx.lineTo(388, 36); // east + top edges
+  ctx.closePath();
+  ctx.fill();
+
+  // International zone (upper-right grid)
+  ctx.fillStyle='#08080e';
+  ctx.fillRect(320,36,68,170);
+  ctx.strokeStyle='rgba(60,60,140,0.18)';ctx.lineWidth=0.8;
+  for(let gx=320;gx<388;gx+=9){ctx.beginPath();ctx.moveTo(gx,36);ctx.lineTo(gx,206);ctx.stroke();}
+  for(let gy=36;gy<206;gy+=9){ctx.beginPath();ctx.moveTo(320,gy);ctx.lineTo(388,gy);ctx.stroke();}
+
+  // Coastline stroke
+  ctx.strokeStyle='#1e6030';ctx.lineWidth=1.5;ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(83,98);ctx.lineTo(69,130);ctx.lineTo(51,165);
+  ctx.lineTo(44,210);ctx.lineTo(53,258);ctx.lineTo(69,282);
+  ctx.lineTo(86,314);ctx.lineTo(120,385);
+  ctx.stroke();
+
+  // State borders (dashed)
+  ctx.strokeStyle='#182a14';ctx.lineWidth=0.8;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.moveTo(69,130);ctx.lineTo(320,130);ctx.stroke(); // WA/OR
+  ctx.beginPath();ctx.moveTo(51,165);ctx.lineTo(320,165);ctx.stroke(); // OR/CA
+  ctx.setLineDash([]);
+
+  // Rocky Mtn silhouette hint
+  ctx.strokeStyle='#142010';ctx.lineWidth=1;
+  for(let mi=0;mi<12;mi++){
+    const bx=236+mi*8;
+    ctx.beginPath();ctx.moveTo(bx,385);ctx.lineTo(bx+4,349-mi%3*6);ctx.lineTo(bx+8,385);ctx.stroke();
   }
-  T('BANK: $'+cr.money+'   FATIGUE: '+cr.fatigue+'%',W/2,56,'#aaa',7);
-  const scrollBase=Math.max(0,cr.mapSel-3);
-  evs.slice(scrollBase,scrollBase+6).forEach((ev,i)=>{
-    const gi=scrollBase+i,y=70+i*48,sel=gi===cr.mapSel;
-    ctx.fillStyle=sel?'#0f0f28':'#080818';
-    ctx.fillRect(16,y,W-32,42);
-    ctx.strokeStyle=sel?'#ffff00':'#222';
-    ctx.lineWidth=1;
-    ctx.strokeRect(16,y,W-32,42);
-    const tierLabels=['ROOKIE','PRO','ELITE','LEGEND'];
-    const tierCols=['#aaa','#ffaa00','#ff6600','#ff00ff'];
-    T('['+tierLabels[ev.tier]+'] '+ev.name,W/2,y+13,sel?'#ffff00':'#aaa',7);
-    T(ev.location,W/2,y+26,sel?'#aaaaff':'#555',6);
-    T('ENTRY: $'+ev.entry+'   PRIZE: $'+ev.prize,W/2,y+39,sel?tierCols[ev.tier]:'#444',6);
+
+  // Map border
+  ctx.strokeStyle='#1a3a1a';ctx.lineWidth=1;ctx.setLineDash([]);
+  ctx.strokeRect(5,36,383,352);
+
+  // Region labels (very dim)
+  ctx.save();ctx.globalAlpha=0.28;
+  T('WASHINGTON',175,118,'#4a8a40',6);
+  T('OREGON',175,152,'#4a8a40',6);
+  T('CALIFORNIA',175,300,'#4a8a40',7);
+  T('COLORADO',272,215,'#6a6ab0',6);
+  T('INTL',354,50,'#5050a0',6);
+  T('HAWAII',34,345,'#408090',5);
+  ctx.restore();
+
+  // ── event nodes ────────────────────────────────────────────────────────────
+  const evs=cr.availableEvents;
+  const selEv=evs[cr.mapSel];
+  const pulse=0.5+0.5*Math.sin(Date.now()/240);
+
+  // Locked (unavailable) events — dim grey dots
+  CR_EVENTS.forEach(ev=>{
+    if(evs.some(e=>e.id===ev.id))return;
+    const n=CR_MAP_NODES[ev.id];if(!n)return;
+    ctx.fillStyle='#242424';
+    ctx.beginPath();ctx.arc(n.x,n.y,3.5,0,Math.PI*2);ctx.fill();
   });
-  if(evs.length>6)T('▼ MORE',W/2,H-22,'#444',6);
-  T('↑↓ SELECT   ENTER COMPETE   ESC BACK',W/2,H-8,'#333',5);
+
+  // Available event nodes
+  evs.forEach((ev,i)=>{
+    const n=CR_MAP_NODES[ev.id];if(!n)return;
+    const sel=i===cr.mapSel;
+    const col=CR_SPORT_COLS[ev.sport]||'#fff';
+    if(sel){
+      // Pulsing glow rings
+      ctx.globalAlpha=0.18*pulse;ctx.fillStyle=col;
+      ctx.beginPath();ctx.arc(n.x,n.y,18,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=0.35*pulse;
+      ctx.beginPath();ctx.arc(n.x,n.y,13,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+      // Filled circle
+      ctx.fillStyle=col;
+      ctx.beginPath();ctx.arc(n.x,n.y,9,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(n.x,n.y,9,0,Math.PI*2);ctx.stroke();
+    } else {
+      ctx.globalAlpha=0.8;ctx.fillStyle=col;
+      ctx.beginPath();ctx.arc(n.x,n.y,6,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    // Sport letter
+    ctx.fillStyle=sel?'#000':'rgba(0,0,0,0.7)';
+    ctx.font='bold '+(sel?8:6)+'px monospace';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(CR_SPORT_LETTS[ev.sport]||'?',n.x,n.y);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  });
+
+  // ── info panel (right side) ────────────────────────────────────────────────
+  const PX=395,PW=240,PC=PX+PW/2; // panel x, width, centre-x
+  ctx.fillStyle='#04040e';
+  ctx.fillRect(PX,36,PW,352);
+  ctx.strokeStyle='#1a1a3a';ctx.lineWidth=1;
+  ctx.strokeRect(PX,36,PW,352);
+
+  if(!evs.length){
+    T('NO EVENTS',PC,200,'#ff4400',9);
+    T('Earn REP to unlock',PC,222,'#555',7);
+    T('higher tier events.',PC,238,'#555',7);
+  } else {
+    const ev=selEv;
+    const col=CR_SPORT_COLS[ev.sport]||'#fff';
+    const tc=CR_TIER_COLS[ev.tier];
+
+    // Tier header
+    ctx.fillStyle=tc;ctx.globalAlpha=0.12;
+    ctx.fillRect(PX,36,PW,38);ctx.globalAlpha=1;
+    T(CR_TIER_LABELS[ev.tier]+' EVENT',PC,54,tc,7);
+    T(ev.name,PC,70,'#fff',7);
+    ctx.fillStyle='#1a1a3a';ctx.fillRect(PX,82,PW,1);
+
+    // Sport icon + location
+    ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(PX+26,106,13,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#000';
+    ctx.font='bold 11px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(CR_SPORT_LETTS[ev.sport]||'?',PX+26,106);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.font='bold 8px monospace';ctx.fillStyle=col;
+    ctx.fillText(ev.sport.replace(/([A-Z])/g,' $1').toUpperCase().trim(),PX+46,101);
+    ctx.fillStyle='#8888aa';ctx.font='bold 6px monospace';
+    ctx.fillText(ev.location,PX+46,115);
+    ctx.fillStyle='#1a1a3a';ctx.fillRect(PX,124,PW,1);
+
+    // Prize table
+    function _pi(label,val,y,vc){
+      ctx.font='bold 6px monospace';ctx.fillStyle='#555';ctx.textAlign='left';
+      ctx.fillText(label,PX+8,y);
+      ctx.fillStyle=vc;ctx.textAlign='right';
+      ctx.fillText(val,PX+PW-8,y);ctx.textAlign='left';
+    }
+    _pi('ENTRY FEE','$'+ev.entry,140,'#ff5500');
+    _pi('1ST PLACE','$'+ev.prize,154,'#00ff00');
+    _pi('2ND PLACE','$'+Math.floor(ev.prize*0.5),168,'#aaff00');
+    _pi('3RD PLACE','$'+Math.floor(ev.prize*0.25),182,'#888800');
+    _pi('REP REWARD','+'+ev.repReward+' REP',196,'#ffaa00');
+    ctx.fillStyle='#1a1a3a';ctx.fillRect(PX,202,PW,1);
+
+    // Player status
+    const canAfford=cr.money>=ev.entry;
+    const notTired=cr.fatigue<=80;
+    _pi('YOUR BANK','$'+cr.money,218,canAfford?'#00ff00':'#ff0000');
+    _pi('FATIGUE',cr.fatigue+'%',232,notTired?'#00ff00':cr.fatigue>60?'#ffaa00':'#ff0000');
+    _pi('REPUTATION',cr.rep+' REP',246,'#ffaa00');
+    ctx.fillStyle='#1a1a3a';ctx.fillRect(PX,252,PW,1);
+
+    // Enter button
+    const canEnter=canAfford&&notTired;
+    ctx.fillStyle=canEnter?'#002800':'#1a0000';
+    ctx.fillRect(PX+8,260,PW-16,54);
+    ctx.strokeStyle=canEnter?'#00cc00':'#880000';ctx.lineWidth=1.5;
+    ctx.strokeRect(PX+8,260,PW-16,54);
+    if(canEnter){
+      T('ENTER',PC,283,'#00ff00',10);
+      T('COMPETE NOW',PC,301,'#00aa00',7);
+    } else {
+      T(canAfford?'TOO FATIGUED':'NEED CASH',PC,283,'#ff4400',9);
+      T(canAfford?'REST FIRST':'GET A JOB',PC,301,'#882200',7);
+    }
+
+    // Tier legend at bottom
+    ctx.fillStyle='#1a1a3a';ctx.fillRect(PX,322,PW,1);
+    T('TIER KEY',PC,334,'#444',6);
+    CR_TIER_LABELS.forEach((tl,ti)=>{
+      const tx=PX+10+ti*58,ty=348;
+      ctx.fillStyle=CR_TIER_COLS[ti];ctx.globalAlpha=0.6;
+      ctx.fillRect(tx,ty-9,54,12);ctx.globalAlpha=1;
+      ctx.font='bold 5px monospace';ctx.textAlign='center';
+      ctx.fillStyle='#000';ctx.fillText(tl,tx+27,ty+1);
+      ctx.textAlign='left';
+    });
+  }
+
+  // ── bottom controls ────────────────────────────────────────────────────────
+  T('ARROWS MOVE   ENTER COMPETE   ESC BACK',W/2,395,'#333',5);
 }
 
 // ── CAREER JOB ────────────────────────────────────────────────────────────────
