@@ -588,7 +588,7 @@ function drawEnd(title,score,sub,col,hs){
 let hk={};
 function initHackySack(){
   hk={px:W/2,py:H-78,bx:W/2,by:H-130,bvx:1.8,bvy:-4,
-    score:0,kicks:0,combo:0,timer:45,timerFrac:0,
+    score:0,kicks:0,combo:0,timer:90,timerFrac:0,
     kickCD:0,trickTimer:0,trickText:'',trickPts:0,phase:'play',bgO:0,
     gull:{active:false,x:0,y:0,spd:0,dir:1,spawnT:8,wing:0,hit:false,hitT:0,feathers:[]},
     drop:{active:false,x:0,y:0,vy:0,pts:0,rot:0},
@@ -666,8 +666,8 @@ function updateHackySack(dt){
     }
   } else {
     // ── NORMAL PLAY ───────────────────────────────────────────────────────
-    if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-4);
-    if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+4);
+    if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-7);
+    if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+7);
     if(keys['Space'])hk.px+=(hk.bx-hk.px)*0.12;
     hk.bvy+=0.2;hk.bx+=hk.bvx;hk.by+=hk.bvy;
     if(hk.bx<10){hk.bx=10;hk.bvx=Math.abs(hk.bvx);}
@@ -707,7 +707,7 @@ function updateHackySack(dt){
       const gdx=hk.bx-g.x,gdy=hk.by-g.y;
       if(Math.sqrt(gdx*gdx+gdy*gdy)<24){
         g.hit=true;g.hitT=0.7;
-        const difficulty=(45-hk.timer)/45;
+        const difficulty=(90-hk.timer)/90;
         const pts=Math.floor((80+difficulty*170)*player.bonus('hackySack'));
         hk.drop={active:true,x:g.x,y:g.y,vy:-1,pts,rot:0};
         g.feathers=[];
@@ -718,7 +718,7 @@ function updateHackySack(dt){
     } else {
       g.spawnT-=dt;
       if(g.spawnT<=0){
-        const difficulty=(45-hk.timer)/45;
+        const difficulty=(90-hk.timer)/90;
         g.spd=1.5+difficulty*3.5+(Math.random()*0.8);
         g.dir=Math.random()<0.5?1:-1;
         g.x=g.dir>0?-60:W+60;
