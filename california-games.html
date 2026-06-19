@@ -112,6 +112,24 @@ const sfx={
   oof:  ()=>beep(180,0.4,'sawtooth',0.12),
   jump: ()=>beep(380,0.1,'square',0.1),
   sel:  ()=>beep(600,0.07,'square',0.09),
+  hulk:()=>{
+    if(!actx)return;
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g);g.connect(actx.destination);
+    o.type='sawtooth';
+    o.frequency.setValueAtTime(55,actx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(160,actx.currentTime+0.9);
+    o.frequency.exponentialRampToValueAtTime(80,actx.currentTime+1.8);
+    g.gain.setValueAtTime(0.28,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+2.0);
+    o.start();o.stop(actx.currentTime+2.0);
+    [70,85,100,120].forEach((f,i)=>setTimeout(()=>beep(f,0.35,'sawtooth',0.13),i*220));
+  },
+  smash:()=>{
+    if(!actx)return;
+    beep(55,0.5,'sawtooth',0.22);
+    setTimeout(()=>beep(40,0.35,'sawtooth',0.16),110);
+  },
   powerup:()=>{
     if(!actx)return;
     // Rising energy sweep
@@ -608,7 +626,8 @@ function initHackySack(){
     gull:{active:false,x:0,y:0,spd:0,dir:1,spawnT:8,wing:0,hit:false,hitT:0,feathers:[]},
     drop:{active:false,x:0,y:0,vy:0,pts:0,rot:0},
     bonusTxt:'',bonusTxtT:0,
-    power:{active:false,timer:0,triggered:false,transforming:false,transformT:0,rings:[],pvx:0,pvy:0,auraT:0,shootCD:0,sacks:[],birds:[]}};
+    power:{active:false,timer:0,triggered:false,transforming:false,transformT:0,rings:[],pvx:0,pvy:0,auraT:0,shootCD:0,sacks:[],birds:[],
+      hulkActive:false,hulkTimer:0,hulkTriggered:false,hulkTransforming:false,hulkTransformT:0,hulkScale:1,hulkPy:0,hulkVy:0,hulkSmashing:false,hulkRings:[],zombieGulls:[]}};
 }
 function updateHackySack(dt){
   if(hk.phase==='end'){if(kp['Enter'])state='menu';return;}
@@ -618,6 +637,88 @@ function updateHackySack(dt){
   hk.bgO+=0.4;if(hk.kickCD>0)hk.kickCD-=dt;if(hk.trickTimer>0)hk.trickTimer-=dt;
   if(hk.bonusTxtT>0)hk.bonusTxtT-=dt;
   const pw=hk.power;
+
+  // ── HULK TRANSFORM ───────────────────────────────────────────────────────
+  if(pw.hulkTransforming){
+    pw.hulkTransformT-=dt;
+    pw.hulkScale=1+(1.8-1)*(1-pw.hulkTransformT/2.0);
+    if(Math.floor(pw.hulkTransformT*4)!==Math.floor((pw.hulkTransformT+dt)*4))
+      pw.hulkRings.push({r:0,alpha:1});
+    pw.hulkRings.forEach(r=>{r.r+=3;r.alpha-=dt*1.0;});
+    pw.hulkRings=pw.hulkRings.filter(r=>r.alpha>0);
+    if(pw.hulkTransformT<=0){
+      pw.hulkTransforming=false;pw.hulkActive=true;pw.hulkTimer=12;
+      pw.hulkScale=1.8;pw.hulkPy=H-78;pw.hulkVy=0;pw.hulkSmashing=false;
+      pw.zombieGulls=[];
+      for(let i=0;i<10;i++){
+        const e=i%4;
+        const zx=e===0||e===2?Math.random()*W:e===1?W+40:-40;
+        const zy=e===0?-40:e===2?H+40:Math.random()*(H*0.6)+40;
+        pw.zombieGulls.push({x:zx,y:zy,vx:0,vy:0,ph:Math.random()*Math.PI*2,wing:0,dead:false,deadT:0,feathers:[]});
+      }
+    }
+  }
+
+  // ── HULK ACTIVE ──────────────────────────────────────────────────────────
+  if(pw.hulkActive){
+    pw.hulkTimer-=dt;
+    // Horizontal movement (fast)
+    if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-8);
+    if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+8);
+    // Vertical jump/smash
+    if(pw.hulkPy>=H-78){
+      pw.hulkPy=H-78;pw.hulkVy=0;
+      if(pw.hulkSmashing){
+        pw.hulkSmashing=false;
+        // Ground smash: kill zombie gulls in radius
+        let killed=0;
+        pw.zombieGulls.forEach(zg=>{
+          if(zg.dead)return;
+          if(Math.abs(zg.x-hk.px)<90&&zg.y>H*0.35){
+            zg.dead=true;zg.deadT=0.9;zg.feathers=[];
+            for(let i=0;i<8;i++)zg.feathers.push({x:zg.x,y:zg.y,vx:(Math.random()-0.5)*6,vy:Math.random()*-5-1,life:0.9});
+            killed++;
+          }
+        });
+        if(killed>0){
+          const pts=killed*120*(hk.combo+1)*player.bonus('hackySack')|0;
+          hk.score+=pts;hk.bonusTxt='SMASH \xd7'+killed+'! +'+pts;hk.bonusTxtT=1.8;sfx.smash();
+        } else {sfx.smash();}
+      }
+      if(kp['Space']){pw.hulkVy=-420;sfx.jump();}
+    } else {
+      pw.hulkVy+=560*dt;
+      pw.hulkPy+=pw.hulkVy*dt;
+      if(pw.hulkPy>=H-78){pw.hulkPy=H-78;}
+      // Smash dive
+      if(kp['Space']&&!pw.hulkSmashing&&pw.hulkVy>-100){pw.hulkSmashing=true;pw.hulkVy=580;}
+      // Kill zombie gulls on contact while jumping
+      pw.zombieGulls.forEach(zg=>{
+        if(zg.dead)return;
+        const ddx=zg.x-hk.px,ddy=zg.y-pw.hulkPy;
+        if(Math.sqrt(ddx*ddx+ddy*ddy)<54){
+          zg.dead=true;zg.deadT=0.9;zg.feathers=[];
+          for(let i=0;i<8;i++)zg.feathers.push({x:zg.x,y:zg.y,vx:(Math.random()-0.5)*6,vy:Math.random()*-4-1,life:0.9});
+          const pts=80*(hk.combo+1)*player.bonus('hackySack')|0;
+          hk.score+=pts;hk.bonusTxt='GOT ONE! +'+pts;hk.bonusTxtT=1.3;sfx.score();
+        }
+      });
+    }
+    // Update zombie gulls
+    pw.zombieGulls.forEach(zg=>{
+      if(zg.dead){zg.deadT-=dt;zg.feathers.forEach(f=>{f.x+=f.vx;f.y+=f.vy;f.vy+=0.2;f.life-=dt;});return;}
+      zg.ph+=dt*2.8;zg.wing+=dt*5;
+      const ddx=hk.px-zg.x,ddy=pw.hulkPy-zg.y,dd=Math.hypot(ddx,ddy)||1;
+      zg.vx+=(ddx/dd)*1.6*dt*10+Math.sin(zg.ph+1.2)*0.5;
+      zg.vy+=(ddy/dd)*1.6*dt*10+Math.cos(zg.ph)*0.3;
+      zg.vx*=0.91;zg.vy*=0.91;zg.x+=zg.vx;zg.y+=zg.vy;
+    });
+    pw.zombieGulls=pw.zombieGulls.filter(zg=>!zg.dead||zg.deadT>0);
+    if(pw.hulkTimer<=0){
+      pw.hulkActive=false;pw.hulkPy=H-78;
+      hk.bonusTxt='HULK OUT!';hk.bonusTxtT=2.2;
+    }
+  }
 
   // ── TRANSFORM ANIMATION ──────────────────────────────────────────────────
   if(pw.transforming){
@@ -726,9 +827,13 @@ function updateHackySack(dt){
       hk.trickPts=hk.combo*10*player.bonus('hackySack')|0;
       hk.score+=hk.trickPts;hk.trickTimer=1.4;sfx.kick();
       // Trigger superpower on gnarly combo 10
-      if(hk.combo>=8&&!pw.triggered&&!pw.transforming){
+      if(hk.combo>=8&&!pw.triggered&&!pw.transforming&&!pw.hulkTransforming&&!pw.hulkActive){
         pw.triggered=true;pw.transforming=true;pw.transformT=1.6;pw.rings=[];
         sfx.powerup();
+      } else if(hk.combo>=8&&pw.triggered&&!pw.active&&!pw.hulkTriggered&&!pw.hulkTransforming&&!pw.hulkActive){
+        pw.hulkTriggered=true;pw.hulkTransforming=true;pw.hulkTransformT=2.0;pw.hulkRings=[];
+        pw.hulkPy=H-78;pw.hulkVy=0;pw.hulkScale=1;pw.hulkSmashing=false;
+        hk.bonusTxt='HULK SMASH!!!';hk.bonusTxtT=3;sfx.hulk();
       }
     }
     // ── Seagull ──────────────────────────────────────────────────────────
@@ -802,10 +907,88 @@ function drawHackySack(){
   ctx.fillStyle='#C8A400';ctx.fillRect(0,H-32,W,32);
   const pw=hk.power;
   const hero=player.hero;
+  // ── Zombie gulls ──────────────────────────────────────────────────────────
+  if(pw.hulkActive||pw.hulkTransforming){
+    pw.zombieGulls&&pw.zombieGulls.forEach(zg=>{
+      zg.feathers&&zg.feathers.forEach(f=>{ctx.globalAlpha=Math.max(0,f.life*0.85);ctx.fillStyle='#2a4a2a';ctx.fillRect(f.x-2,f.y-3,4,8);});
+      ctx.globalAlpha=1;
+      if(zg.dead)return;
+      const dir=zg.vx>=0?1:-1;
+      ctx.save();ctx.translate(zg.x,zg.y);if(dir<0)ctx.scale(-1,1);
+      const wf=Math.sin(zg.wing||0)*10;
+      ctx.fillStyle='#2a3d2a';ctx.strokeStyle='#1a2a1a';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.ellipse(0,0,13,5,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.strokeStyle='#243424';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(-9,-1);ctx.quadraticCurveTo(-19,-9+wf*0.5,-26,-4-wf*0.3);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(-16,-5+wf*0.3);ctx.lineTo(-13,-1);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(9,-1);ctx.quadraticCurveTo(19,-9+wf*0.5,26,-4-wf*0.3);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(16,-5+wf*0.3);ctx.lineTo(13,-1);ctx.stroke();
+      ctx.fillStyle='#2a3d2a';ctx.beginPath();ctx.arc(12,-2,5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ff0000';ctx.beginPath();ctx.arc(14,-3,2.2,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,0,0,0.35)';ctx.beginPath();ctx.arc(14,-3,4.5,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#774400';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(16,-1);ctx.lineTo(23,1);ctx.stroke();
+      ctx.restore();
+    });
+  }
+  // ── Hulk avatar ───────────────────────────────────────────────────────────
+  if(pw.hulkActive||pw.hulkTransforming){
+    const hsc=pw.hulkScale||1;
+    const hpy=(pw.hulkActive?pw.hulkPy:H-78)||H-78;
+    ctx.save();ctx.translate(hk.px,hpy);ctx.scale(hsc,hsc);
+    // Shadow
+    ctx.fillStyle='rgba(0,60,0,0.18)';ctx.beginPath();ctx.ellipse(0,30,24,6,0,0,Math.PI*2);ctx.fill();
+    // Shorts
+    ctx.fillStyle='#4a3080';ctx.fillRect(-14,6,12,22);ctx.fillRect(2,6,12,22);
+    // Body
+    ctx.fillStyle='#228b22';
+    ctx.beginPath();ctx.moveTo(-17,6);ctx.lineTo(17,6);ctx.lineTo(14,-18);ctx.lineTo(-14,-18);ctx.closePath();ctx.fill();
+    // Arms
+    ctx.strokeStyle='#228b22';ctx.lineWidth=9;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-14,-8);ctx.lineTo(-32,-2);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(14,-8);ctx.lineTo(32,-2);ctx.stroke();
+    ctx.fillStyle='#1e7a1e';ctx.beginPath();ctx.arc(-32,-2,8,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(32,-2,8,0,Math.PI*2);ctx.fill();
+    // Head
+    ctx.fillStyle='#228b22';ctx.beginPath();ctx.arc(0,-30,15,0,Math.PI*2);ctx.fill();
+    // Brows
+    ctx.strokeStyle='#1a5c1a';ctx.lineWidth=3.5;ctx.lineCap='square';
+    ctx.beginPath();ctx.moveTo(-12,-37);ctx.lineTo(-5,-33);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(12,-37);ctx.lineTo(5,-33);ctx.stroke();
+    // Eyes
+    ctx.fillStyle='#fff';ctx.fillRect(-9,-34,6,5);ctx.fillRect(3,-34,6,5);
+    ctx.fillStyle='#111';ctx.fillRect(-8,-33,4,4);ctx.fillRect(4,-33,4,4);
+    // Mouth
+    ctx.strokeStyle='#1a5c1a';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(-6,-23);ctx.lineTo(0,-26);ctx.lineTo(6,-23);ctx.stroke();
+    ctx.restore();
+    // Smash zone arc
+    if(pw.hulkSmashing){
+      ctx.strokeStyle='rgba(0,255,60,0.65)';ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(hk.px,H-78,90,Math.PI,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='rgba(0,255,60,0.12)';ctx.beginPath();ctx.arc(hk.px,H-78,90,Math.PI,Math.PI*2);ctx.fill();
+      T('SMASH ZONE',hk.px,H-84,'#00ff44',7);
+    }
+  }
   // Player shadow (ground only)
   if(!pw.active){
     ctx.fillStyle='rgba(0,0,0,0.12)';
     ctx.beginPath();ctx.ellipse(hk.px,H-72,22,5,0,0,Math.PI*2);ctx.fill();
+  }
+  // ── Hulk transform animation ──────────────────────────────────────────────
+  if(pw.hulkTransforming){
+    const frac=pw.hulkTransformT/2.0;
+    ctx.fillStyle=`rgba(0,180,0,${0.12+Math.sin((1-frac)*Math.PI)*0.28})`;
+    ctx.fillRect(0,0,W,H);
+    pw.hulkRings.forEach(r=>{
+      ctx.strokeStyle=`rgba(0,220,0,${r.alpha.toFixed(2)})`;
+      ctx.lineWidth=3;ctx.beginPath();ctx.arc(hk.px,hk.py-22,r.r,0,Math.PI*2);ctx.stroke();
+    });
+    const pulse=0.7+Math.sin(pw.hulkTransformT*12)*0.3;
+    ctx.globalAlpha=pulse;
+    T('HULK SMASH!!!',W/2,H/2-50,'#00ff44',20);
+    T('HULK MODE ACTIVATED',W/2,H/2-18,'#88ff88',10);
+    ctx.globalAlpha=1;
   }
   // ── Transform animation ───────────────────────────────────────────────────
   if(pw.transforming){
@@ -974,14 +1157,20 @@ function drawHackySack(){
     T('+'+hk.trickPts+' pts',W/2,H/2+4,'#00ff88',10);
     ctx.globalAlpha=1;
   }
-  if(pw.active){
+  if(pw.hulkActive){
+    const bw=160,bh=9,bxh=W/2-80,byh=H-22;
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(bxh-2,byh-2,bw+4,bh+4);
+    ctx.fillStyle=pw.hulkTimer>4?'#00cc44':'#ff4400';
+    ctx.fillRect(bxh,byh,bw*(pw.hulkTimer/12),bh);
+    T('HULK MODE  SPACE=JUMP  SPACE(AIR)=SMASH',W/2,H-5,'rgba(0,255,80,0.75)',7);
+  } else if(pw.active){
     const bw=160,bh=9,bx=W/2-80,by=H-22;
     ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(bx-2,by-2,bw+4,bh+4);
     const frac=Math.max(0,pw.timer/10);
     const barCol=frac>0.4?'#ffdd00':'#ff4400';
     ctx.fillStyle=barCol;ctx.fillRect(bx,by,bw*frac,bh);
     T('⚡ SUPER MODE  ←→↑↓ FLY   SPACE = SHOOT',W/2,H-5,'rgba(255,255,0,0.7)',7);
-  } else {
+  } else if(!pw.hulkActive&&!pw.hulkTransforming){
     T('←→ MOVE   SPACE CHASE BALL   Walk into it to kick!',W/2,H-5,'rgba(255,255,255,0.4)',7);
   }
   if(hk.phase==='end')drawEnd('TIME\'S UP!',hk.score,'KICKS: '+hk.kicks,'#00ff88',HS.hackySack);
