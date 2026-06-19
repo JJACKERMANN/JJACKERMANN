@@ -397,6 +397,9 @@ let state='title',tick=0;
 let heroSel=0,spSel=0,eqRow=0;
 const EQ_ROWS=['halfpipe','surfing','bmx'];
 let menuSel=0,menuTick=0;
+let modeSel=0;
+let careerMode=false;
+let cr={};
 
 // ── TITLE ────────────────────────────────────────────────────────────────────
 function updateTitle(){
@@ -424,8 +427,8 @@ function updateProfileName(){
   if((kp['Enter'])&&ni.value.trim().length>0){
     player.name=ni.value.trim().toUpperCase().slice(0,10);
     ni.style.display='none';
-    state='heroSelect';
-    heroSel=0;
+    state='modeSelect';
+    modeSel=0;
     sfx.sel();
   }
 }
@@ -531,7 +534,7 @@ function updateEquipment(){
   const key=EQ_ROWS[eqRow],opts=EQUIP[key];
   if(kp['ArrowLeft']) {player.equip[key]=(player.equip[key]-1+opts.length)%opts.length;sfx.tick();}
   if(kp['ArrowRight']){player.equip[key]=(player.equip[key]+1)%opts.length;sfx.tick();}
-  if(kp['Enter']){state='menu';menuSel=0;sfx.score();}
+  if(kp['Enter']){if(careerMode){state='careerHub';cr.hubSel=0;}else{state='menu';menuSel=0;}sfx.score();}
 }
 function drawEquipment(){
   ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
@@ -644,7 +647,7 @@ function initHackySack(){
       hulkActive:false,hulkTimer:0,hulkTriggered:false,hulkTransforming:false,hulkTransformT:0,hulkScale:1,hulkPy:0,hulkVy:0,hulkSmashing:false,hulkRings:[],zombieGulls:[]}};
 }
 function updateHackySack(dt){
-  if(hk.phase==='end'){if(kp['Enter'])state='menu';return;}
+  if(hk.phase==='end'){if(kp['Enter']){if(careerMode)_crFinishEvent('hackySack',hk.score);else state='menu';}return;}
   hk.timerFrac+=dt;
   if(hk.timerFrac>=1){hk.timerFrac-=1;hk.timer--;
     if(hk.timer<=0){hk.phase='end';saveHS('hackySack',hk.score);sfx.score();return;}}
@@ -1222,7 +1225,7 @@ const HP_TRICKS={
   'KeyW':{name:'AIR WALK', pts:300},
 };
 function updateHalfpipe(dt){
-  if(hp.phase==='end'){if(kp['Enter'])state='menu';return;}
+  if(hp.phase==='end'){if(kp['Enter']){if(careerMode)_crFinishEvent('halfpipe',hp.score);else state='menu';}return;}
   hp.timerFrac+=dt;
   if(hp.timerFrac>=1){hp.timerFrac-=1;hp.timer--;
     if(hp.timer<=0){hp.phase='end';saveHS('halfpipe',hp.score);sfx.score();return;}}
@@ -1523,7 +1526,7 @@ function initSurfing(){
   };
 }
 function updateSurfing(dt){
-  if(sf.phase==='end'){if(kp['Enter'])state='menu';return;}
+  if(sf.phase==='end'){if(kp['Enter']){if(careerMode)_crFinishEvent('surfing',Math.floor(sf.score));else state='menu';}return;}
   sf.timerFrac+=dt;
   if(sf.timerFrac>=1){sf.timerFrac-=1;sf.timer--;
     if(sf.timer<=0){sf.phase='end';saveHS('surfing',Math.floor(sf.score));sfx.score();return;}}
@@ -1900,7 +1903,7 @@ function bmxGround(x){
   return gy;
 }
 function updateBMX(dt){
-  if(bm.phase==='end'){if(kp['Enter'])state='menu';return;}
+  if(bm.phase==='end'){if(kp['Enter']){if(careerMode)_crFinishEvent('bmx',Math.floor(bm.score));else state='menu';}return;}
   if(bm.crashed){bm.crashTimer-=dt;
     if(bm.crashTimer<=0){
       // Advance bx forward until clear of all ramps and obstacles
@@ -2250,7 +2253,7 @@ function initFrisbee(){
 }
 
 function updateFrisbee(dt){
-  if(fr.phase==='end'){if(kp['Enter'])state='menu';return;}
+  if(fr.phase==='end'){if(kp['Enter']){if(careerMode)_crFinishEvent('frisbee',fr.score);else state='menu';}return;}
   if(fr.bonusTxtT>0)fr.bonusTxtT-=dt;
 
   if(fr.phase==='aim'){
@@ -2634,7 +2637,7 @@ function initSnowboard(){
   _sbGenObstacles();_sbGenObstacles();_sbGenObstacles();
 }
 function updateSnowboard(dt){
-  if(sb.phase==='end'){if(kp['Enter'])state='menu';return;}
+  if(sb.phase==='end'){if(kp['Enter']){if(careerMode)_crFinishEvent('snowboard',sb.score);else state='menu';}return;}
   sb.timerFrac+=dt;
   if(sb.timerFrac>=1){sb.timerFrac-=1;sb.timer--;
     if(sb.timer<=0){sb.phase='end';saveHS('snowboard',sb.score);sfx.score();return;}}
@@ -2940,6 +2943,614 @@ function drawSnowboard(){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CAREER MODE
+// ══════════════════════════════════════════════════════════════════════════════
+const CR_TIERS=['ROOKIE','PRO','ELITE','LEGEND'];
+
+const CR_RIVALS=[
+  {id:'sunny',name:'Sunny Rodriguez',tier:0,type:'hero',sport:'surfing',skill:0.6,color:'#ff9900'},
+  {id:'max',name:'Max Thunder',tier:1,type:'hero',sport:'halfpipe',skill:0.75,color:'#00aaff'},
+  {id:'kira',name:'Kira Frost',tier:2,type:'hero',sport:'snowboard',skill:0.85,color:'#aaeeff'},
+  {id:'duke',name:'Duke Viper',tier:0,type:'villain',sport:'bmx',skill:0.55,color:'#ff0000'},
+  {id:'rico',name:'Rico Cash',tier:1,type:'villain',sport:'hackySack',skill:0.70,color:'#cc0044'},
+  {id:'broker',name:'The Broker',tier:2,type:'villain',sport:'frisbee',skill:0.82,color:'#880000'},
+  {id:'zyx',name:'Zyx-7',tier:3,type:'alien',sport:'surfing',skill:0.92,color:'#00ff88'},
+  {id:'glitch',name:'The Glitch',tier:3,type:'alien',sport:'halfpipe',skill:0.95,color:'#ff00ff'},
+  {id:'neon',name:'Neon',tier:3,type:'alien',sport:'bmx',skill:0.90,color:'#ffff00'},
+];
+
+const CR_EVENTS=[
+  {id:'venice_hs',name:'Venice Beach Sack Off',sport:'hackySack',tier:0,prize:300,entry:50,repReward:10,location:'Venice Beach, CA'},
+  {id:'malibu_surf',name:'Malibu Invitational',sport:'surfing',tier:0,prize:400,entry:60,repReward:12,location:'Malibu, CA'},
+  {id:'sb_pipe',name:'Santa Barbara Halfpipe',sport:'halfpipe',tier:0,prize:350,entry:55,repReward:10,location:'Santa Barbara, CA'},
+  {id:'la_bmx',name:'L.A. Street BMX',sport:'bmx',tier:0,prize:320,entry:50,repReward:10,location:'Los Angeles, CA'},
+  {id:'frisco_fris',name:'Frisco Frisbee Classic',sport:'frisbee',tier:0,prize:280,entry:45,repReward:8,location:'San Francisco, CA'},
+  {id:'tahoe_snow',name:'Lake Tahoe Open',sport:'snowboard',tier:0,prize:380,entry:60,repReward:12,location:'Lake Tahoe, CA'},
+  {id:'huntington_surf',name:'Huntington Classic',sport:'surfing',tier:1,prize:700,entry:100,repReward:20,location:'Huntington Beach, CA'},
+  {id:'sf_pipe',name:'SF Halfpipe Jam',sport:'halfpipe',tier:1,prize:650,entry:90,repReward:18,location:'San Francisco, CA'},
+  {id:'big_bmx',name:'California BMX Cup',sport:'bmx',tier:1,prize:600,entry:85,repReward:16,location:'Sacramento, CA'},
+  {id:'maui_surf',name:'Maui Masters',sport:'surfing',tier:1,prize:900,entry:120,repReward:24,location:'Maui, HI'},
+  {id:'nationals_hs',name:'National Sack Championship',sport:'hackySack',tier:2,prize:1200,entry:200,repReward:35,location:'Portland, OR'},
+  {id:'pipe_masters',name:'Pipeline Masters',sport:'halfpipe',tier:2,prize:1500,entry:220,repReward:40,location:'Breckenridge, CO'},
+  {id:'pacific_bmx',name:'Pacific Rim BMX',sport:'bmx',tier:2,prize:1400,entry:210,repReward:38,location:'Seattle, WA'},
+  {id:'snowboard_elite',name:'Elite Snowboard Series',sport:'snowboard',tier:2,prize:1600,entry:230,repReward:42,location:'Aspen, CO'},
+  {id:'world_games',name:'California World Games',sport:'hackySack',tier:3,prize:5000,entry:500,repReward:100,location:'San Diego, CA'},
+  {id:'world_pipe',name:'World Halfpipe Finals',sport:'halfpipe',tier:3,prize:6000,entry:600,repReward:120,location:'Tokyo, Japan'},
+  {id:'world_surf',name:'World Surfing Championship',sport:'surfing',tier:3,prize:7000,entry:650,repReward:130,location:'Pipeline, Hawaii'},
+  {id:'world_bmx',name:'World BMX Grand Prix',sport:'bmx',tier:3,prize:5500,entry:550,repReward:110,location:'Madrid, Spain'},
+];
+
+const CR_JOBS=[
+  {id:'lifeguard',name:'Lifeguard',pay:200,fatigue:15,badHabitRisk:0,desc:'Watch the beach. Steady pay.',available:'always'},
+  {id:'surf_inst',name:'Surf Instructor',pay:260,fatigue:20,badHabitRisk:0,desc:'Teach beginners. Good pay.',available:'always'},
+  {id:'pizza',name:'Pizza Delivery',pay:160,fatigue:10,badHabitRisk:0,desc:'Easy hours. Lower pay.',available:'always'},
+  {id:'bar',name:'Bar Work',pay:240,fatigue:25,badHabitRisk:15,desc:'Late nights. Bad habit risk!',available:'always'},
+  {id:'shoot',name:'Sponsor Shoot',pay:500,fatigue:5,badHabitRisk:0,desc:'Requires active sponsor.',available:'sponsor'},
+  {id:'demo',name:'Skate Demo',pay:350,fatigue:20,badHabitRisk:0,desc:'Put on a show. Pro+ tier.',available:'pro'},
+];
+
+const CR_SHOP_ITEMS=[
+  {id:'hs_1',name:'Pro Hacky Sack',sport:'hackySack',tier:1,cost:150,stat:'+15% score bonus',key:'hackySack'},
+  {id:'hs_2',name:'Elite Hacky Sack',sport:'hackySack',tier:2,cost:400,stat:'+30% score bonus',key:'hackySack'},
+  {id:'hp_1',name:'Carbon Deck',sport:'halfpipe',tier:1,cost:180,stat:'+15% score bonus',key:'halfpipe'},
+  {id:'hp_2',name:'Pro Ramp Board',sport:'halfpipe',tier:2,cost:450,stat:'+30% score bonus',key:'halfpipe'},
+  {id:'sf_1',name:'Pro Surfboard',sport:'surfing',tier:1,cost:200,stat:'+15% score bonus',key:'surfing'},
+  {id:'sf_2',name:'Elite Longboard',sport:'surfing',tier:2,cost:550,stat:'+30% score bonus',key:'surfing'},
+  {id:'bx_1',name:'Pro BMX Bike',sport:'bmx',tier:1,cost:220,stat:'+15% score bonus',key:'bmx'},
+  {id:'bx_2',name:'Carbon BMX Rig',sport:'bmx',tier:2,cost:600,stat:'+30% score bonus',key:'bmx'},
+  {id:'fr_1',name:'Pro Disc',sport:'frisbee',tier:1,cost:120,stat:'+15% score bonus',key:'frisbee'},
+  {id:'fr_2',name:'Elite Disc',sport:'frisbee',tier:2,cost:320,stat:'+30% score bonus',key:'frisbee'},
+  {id:'sb_1',name:'Pro Snowboard',sport:'snowboard',tier:1,cost:250,stat:'+15% score bonus',key:'snowboard'},
+  {id:'sb_2',name:'Elite Snowboard',sport:'snowboard',tier:2,cost:700,stat:'+30% score bonus',key:'snowboard'},
+  {id:'apt',name:'Beach Apartment',sport:null,tier:1,cost:600,stat:'$120/wk rent. +5 rep/wk.',key:'home_apt'},
+  {id:'house',name:'Beach House',sport:null,tier:2,cost:2000,stat:'$200/wk rent. +15 rep/wk.',key:'home_house'},
+  {id:'physio',name:'Physio Session',sport:null,tier:0,cost:100,stat:'+30 health (consumable)',key:'physio'},
+  {id:'trainer',name:'Personal Trainer',sport:null,tier:1,cost:200,stat:'+20 health +10 rep (consumable)',key:'trainer'},
+];
+
+const CR_STORY_SCENES={
+  intro:{title:'THE DREAM',panels:[
+    {bg:'#07071a',char:'player',text:'You pack everything into a beat-up van and head to California. Sun, surf, and a dream.'},
+    {bg:'#0a0a1e',char:'player',text:'The California Games await. Six events. One champion. Will it be you?'},
+  ]},
+  meet_sunny:{title:'A FAMILIAR FACE',panels:[
+    {bg:'#0d1a0a',char:'sunny',text:'"Hey! You must be new here. I\'m Sunny Rodriguez. Fair warning — the waves are MINE."'},
+    {bg:'#0d1a0a',char:'player',text:'You nod and wax your board. The rivalry begins.'},
+  ]},
+  meet_duke:{title:'THE FIXER',panels:[
+    {bg:'#1a0a0a',char:'duke',text:'"Kid. Talented. I can make sure you place well. If you pay the right people."'},
+    {bg:'#1a0a0a',char:'player',text:'You walk away. Duke\'s eyes follow you. This isn\'t over.'},
+  ]},
+  first_win:{title:'BREAKTHROUGH',panels:[
+    {bg:'#071a07',char:'player',text:'The crowd erupts. You\'ve won your first event. The scoreboard says it all.'},
+    {bg:'#071a07',char:'sunny',text:'"Nice run. Don\'t get comfortable." Sunny flashes a grin and walks off.'},
+  ]},
+  broker_offer:{title:'THE OFFER',panels:[
+    {bg:'#1a0000',char:'broker',text:'"I am The Broker. Throw three events and your debts disappear. Simple."'},
+    {bg:'#1a0000',char:'player',text:'You stare at the shadowy figure. Walk away. The game is the game.'},
+  ]},
+  injury_warning:{title:'WARNING SIGNS',panels:[
+    {bg:'#1a0a00',char:'player',text:'Your body is taking a toll. Fatigue is building. One bad wipeout could end it all.'},
+    {bg:'#1a0a00',char:'player',text:'Time to see a physio — or rest. The career is a marathon, not a sprint.'},
+  ]},
+  alien_first:{title:'THEY CAME FROM BEYOND',panels:[
+    {bg:'#000a1a',char:'zyx',text:'"*BEEP BLOOP* Greetings, carbon-unit. We have observed your primitive sport-rituals."'},
+    {bg:'#000a1a',char:'player',text:'Three aliens. Surfboards. Halfpipes. BMX rigs. What is happening.'},
+    {bg:'#000a1a',char:'zyx',text:'"We challenge you. Win, and we leave peacefully. Lose... and California belongs to us."'},
+  ]},
+  world_champion:{title:'WORLD CHAMPION',panels:[
+    {bg:'#071a07',char:'player',text:'The final scores are in. The crowd goes silent. Then — PANDEMONIUM.'},
+    {bg:'#071a07',char:'player',text:'YOU ARE THE CALIFORNIA GAMES WORLD CHAMPION. No one can take this from you.'},
+  ]},
+};
+
+// ── MODE SELECT ───────────────────────────────────────────────────────────────
+function updateModeSelect(){
+  if(kp['ArrowLeft']||kp['ArrowRight']){modeSel=modeSel===0?1:0;sfx.tick();}
+  if(kp['Enter']){
+    careerMode=modeSel===1;
+    if(careerMode){
+      initCareer();
+      cr.storySceneId='intro';cr.storyPanelIdx=0;
+      state='careerStory';
+    } else {
+      state='heroSelect';heroSel=0;
+    }
+    sfx.sel();
+  }
+}
+function drawModeSelect(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  T('CHOOSE YOUR PATH',W/2,40,'#ffff00',14);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(40,56,W-80,2);
+  T('HOW DO YOU WANT TO PLAY?',W/2,80,'#aaaacc',8);
+  const opts=[
+    {label:'ARCADE',desc:['Pick hero & sports.','Classic high-score fun.'],col:'#ff6600'},
+    {label:'CAREER',desc:['Start broke in a van.','Work, compete, go pro.'],col:'#00ff88'},
+  ];
+  opts.forEach((o,i)=>{
+    const x=W/4+(i*W/2),y=H/2-20;
+    const sel=modeSel===i;
+    ctx.fillStyle=sel?'#0f0f28':'#080818';
+    ctx.fillRect(x-84,y-44,168,120);
+    ctx.strokeStyle=sel?o.col:'#333';
+    ctx.lineWidth=sel?2:1;
+    ctx.strokeRect(x-84,y-44,168,120);
+    T(o.label,x,y-10,sel?o.col:'#555',10);
+    o.desc.forEach((l,li)=>T(l,x,y+14+li*18,sel?'#cccccc':'#444',6));
+  });
+  T('◄ ► SELECT   ENTER CONFIRM',W/2,H-14,'#444',7);
+}
+
+// ── CAREER CORE ──────────────────────────────────────────────────────────────
+function initCareer(){
+  cr={
+    week:1,season:1,money:500,
+    weeklyRent:0,weeklyFood:55,
+    tier:0,rep:0,health:100,fatigue:0,badHabits:0,
+    home:'van',
+    gear:{hackySack:0,halfpipe:0,surfing:0,bmx:0,frisbee:0,snowboard:0},
+    ownedItems:new Set(),
+    sponsor:null,sponsorWeekly:0,
+    seasonPts:0,totalScore:0,eventsWon:0,podiums:0,eventsEntered:0,
+    pendingEvent:null,eventResult:null,
+    rivals:[],standings:[],
+    storyQueue:[],storyPanelIdx:0,storySceneId:null,storyFlags:new Set(),
+    completedEvents:new Set(),
+    hubSel:0,mapSel:0,jobSel:0,shopSel:0,
+    ended:false,endReason:'',weekMsg:'',weekMsgT:0,
+    availableEvents:[],availableJobs:[],
+    repToNextTier:[30,80,150,9999],
+  };
+  _crRefreshAvailable();
+  _crRefreshRivals();
+  _crRefreshStandings();
+}
+
+function _crRefreshAvailable(){
+  cr.availableEvents=CR_EVENTS.filter(e=>e.tier<=cr.tier&&!cr.completedEvents.has(e.id));
+  cr.availableJobs=CR_JOBS.filter(j=>{
+    if(j.available==='always')return true;
+    if(j.available==='sponsor')return cr.sponsor!=null;
+    if(j.available==='pro')return cr.tier>=1;
+    return false;
+  });
+}
+
+function _crRefreshRivals(){
+  cr.rivals=CR_RIVALS.filter(r=>r.tier<=cr.tier+1).slice(0,6);
+}
+
+function _crRefreshStandings(){
+  const entries=[{name:player.name,pts:cr.seasonPts,isPlayer:true}];
+  cr.rivals.forEach(r=>{
+    const rpts=Math.floor(r.skill*(cr.seasonPts||10)*(0.7+Math.random()*0.6)+10);
+    entries.push({name:r.name,pts:rpts,isPlayer:false,col:r.color});
+  });
+  entries.sort((a,b)=>b.pts-a.pts);
+  cr.standings=entries;
+}
+
+function _crCheckTier(){
+  if(cr.tier<3&&cr.rep>=cr.repToNextTier[cr.tier]){
+    cr.tier++;
+    cr.weekMsg='PROMOTED TO '+CR_TIERS[cr.tier]+'!';cr.weekMsgT=4;
+    _crRefreshAvailable();_crRefreshRivals();
+    if(cr.tier===3&&!cr.storyFlags.has('alien_first')){
+      cr.storyQueue.push('alien_first');cr.storyFlags.add('alien_first');
+    }
+  }
+}
+
+function _crAdvanceWeek(){
+  cr.week++;
+  if(cr.week>52){cr.week=1;cr.season++;cr.seasonPts=0;}
+  cr.money-=(cr.weeklyRent+cr.weeklyFood);
+  cr.money+=cr.sponsorWeekly;
+  if(cr.home==='apt')cr.rep+=5;
+  if(cr.home==='house')cr.rep+=15;
+  cr.fatigue=Math.max(0,cr.fatigue-10);
+  if(cr.badHabits>50)cr.health-=5;
+  if(cr.health<=0){cr.ended=true;cr.endReason='HEALTH';state='careerEnd';return;}
+  if(cr.money<=-500){cr.ended=true;cr.endReason='BROKE';state='careerEnd';return;}
+  _crRefreshAvailable();
+  _crCheckTier();
+  _crRefreshStandings();
+  if(cr.eventsWon===1&&!cr.storyFlags.has('first_win')){
+    cr.storyQueue.push('first_win');cr.storyFlags.add('first_win');
+  }
+  if(cr.tier>=1&&!cr.storyFlags.has('meet_duke')){
+    cr.storyQueue.push('meet_duke');cr.storyFlags.add('meet_duke');
+  }
+  if(cr.tier>=2&&!cr.storyFlags.has('broker_offer')){
+    cr.storyQueue.push('broker_offer');cr.storyFlags.add('broker_offer');
+  }
+  if(cr.health<40&&!cr.storyFlags.has('injury_warning')){
+    cr.storyQueue.push('injury_warning');cr.storyFlags.add('injury_warning');
+  }
+}
+
+function _crFinishEvent(sport,rawScore){
+  const ev=cr.pendingEvent;
+  if(!ev){state='careerHub';return;}
+  const gearBonus=1+(cr.gear[sport]||0)*0.15;
+  const score=Math.floor(rawScore*gearBonus);
+  cr.eventsEntered++;
+  cr.totalScore+=score;
+  const rival=cr.rivals.find(r=>r.sport===sport);
+  const rivalScore=Math.floor(rival?rival.skill*score*(0.9+Math.random()*0.4):score*(0.8+Math.random()*0.4));
+  let place=1;
+  if(rivalScore>score)place=2;
+  if(Math.random()<0.3&&place<3)place++;
+  place=Math.min(place,cr.rivals.length+1);
+  let prize=0;
+  let repG=0;
+  let pts=0;
+  if(place===1){prize=ev.prize;cr.eventsWon++;repG=ev.repReward;pts=ev.repReward;}
+  else if(place===2){prize=Math.floor(ev.prize*0.5);cr.podiums++;repG=Math.floor(ev.repReward*0.5);pts=Math.floor(ev.repReward*0.6);}
+  else if(place===3){prize=Math.floor(ev.prize*0.25);cr.podiums++;repG=Math.floor(ev.repReward*0.3);pts=Math.floor(ev.repReward*0.3);}
+  else{repG=Math.floor(ev.repReward*0.1);pts=Math.floor(ev.repReward*0.1);}
+  cr.money+=prize-ev.entry;
+  cr.rep+=repG;
+  cr.seasonPts+=pts;
+  cr.fatigue=Math.min(100,cr.fatigue+25);
+  cr.completedEvents.add(ev.id);
+  cr.eventResult={
+    eventName:ev.name,sport,score,rivalScore,rivalName:rival?rival.name:'The Field',
+    place,prize,entryFee:ev.entry,net:prize-ev.entry,repGained:repG,
+    newRep:cr.rep,newMoney:cr.money,
+  };
+  if(cr.tier===3&&cr.eventsWon>=3&&!cr.storyFlags.has('world_champion')){
+    cr.storyQueue.push('world_champion');cr.storyFlags.add('world_champion');
+  }
+  cr.pendingEvent=null;
+  _crAdvanceWeek();
+  if(!cr.ended)state='careerEventResult';
+}
+
+// ── CAREER HUB ────────────────────────────────────────────────────────────────
+const CR_HUB_OPTS=['ENTER EVENT','GET A JOB','VISIT SHOP','STANDINGS','REST'];
+const CR_HUB_HINTS=['Choose a competition to enter','Take a job to earn cash','Upgrade gear or lifestyle','Check season standings','Skip a week to recover (+health)'];
+
+function updateCareerHub(){
+  if(cr.storyQueue.length>0){
+    cr.storySceneId=cr.storyQueue.shift();
+    cr.storyPanelIdx=0;
+    state='careerStory';
+    return;
+  }
+  if(kp['ArrowUp']){cr.hubSel=(cr.hubSel-1+CR_HUB_OPTS.length)%CR_HUB_OPTS.length;sfx.tick();}
+  if(kp['ArrowDown']){cr.hubSel=(cr.hubSel+1)%CR_HUB_OPTS.length;sfx.tick();}
+  if(kp['Enter']){
+    sfx.sel();
+    if(cr.hubSel===0){state='careerMap';cr.mapSel=0;}
+    else if(cr.hubSel===1){state='careerJob';cr.jobSel=0;}
+    else if(cr.hubSel===2){state='careerShop';cr.shopSel=0;}
+    else if(cr.hubSel===3){state='careerStandings';}
+    else{
+      cr.fatigue=Math.max(0,cr.fatigue-30);
+      cr.health=Math.min(100,cr.health+10);
+      _crAdvanceWeek();
+      if(!cr.ended){cr.weekMsg='RESTED — +10 HEALTH, FATIGUE DOWN';cr.weekMsgT=3;}
+    }
+  }
+}
+function drawCareerHub(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  const tierCol=['#aaaaaa','#ffaa00','#ff6600','#ff00ff'][cr.tier];
+  T(CR_TIERS[cr.tier]+' • WK '+cr.week+' S'+cr.season,W/2,20,tierCol,7);
+  T(player.name+"'S CAREER HUB",W/2,38,'#ffff00',12);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,50,W-40,1);
+  const sy=64;
+  T('$'+cr.money,70,sy,'#00ff00',7);
+  T('REP:'+cr.rep,152,sy,'#ffaa00',7);
+  T('HP:'+cr.health,220,sy,cr.health>60?'#00ff00':cr.health>30?'#ffaa00':'#ff0000',7);
+  T('FAT:'+cr.fatigue,288,sy,cr.fatigue<50?'#00ff00':'#ff4400',7);
+  T('PTS:'+cr.seasonPts,360,sy,'#00aaff',7);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,74,W-40,1);
+  CR_HUB_OPTS.forEach((opt,i)=>{
+    const y=94+i*46,sel=cr.hubSel===i;
+    ctx.fillStyle=sel?'#0f0f28':'#080818';
+    ctx.fillRect(28,y-18,W-56,40);
+    ctx.strokeStyle=sel?'#ffff00':'#222';
+    ctx.lineWidth=1;
+    ctx.strokeRect(28,y-18,W-56,40);
+    T(opt,W/2,y+2,sel?'#ffff00':'#666',9);
+    if(sel)T(CR_HUB_HINTS[i],W/2,y+18,'#888',6);
+  });
+  if(cr.weekMsgT>0){
+    cr.weekMsgT-=0.016;
+    ctx.globalAlpha=Math.min(1,cr.weekMsgT);
+    T(cr.weekMsg,W/2,H-26,'#ffff00',8);
+    ctx.globalAlpha=1;
+  }
+  T('HOME: '+cr.home.toUpperCase()+'  RENT: $'+cr.weeklyRent+'/wk',W/2,H-10,'#444',6);
+}
+
+// ── CAREER MAP ────────────────────────────────────────────────────────────────
+function updateCareerMap(){
+  const evs=cr.availableEvents;
+  if(kp['Escape']){state='careerHub';sfx.sel();return;}
+  if(evs.length===0){return;}
+  if(kp['ArrowUp']){cr.mapSel=(cr.mapSel-1+evs.length)%evs.length;sfx.tick();}
+  if(kp['ArrowDown']){cr.mapSel=(cr.mapSel+1)%evs.length;sfx.tick();}
+  if(kp['Enter']){
+    const ev=evs[cr.mapSel];
+    if(cr.money<ev.entry){cr.weekMsg='NOT ENOUGH MONEY!';cr.weekMsgT=2;state='careerHub';return;}
+    if(cr.fatigue>80){cr.weekMsg='TOO FATIGUED TO COMPETE!';cr.weekMsgT=2;state='careerHub';return;}
+    cr.pendingEvent=ev;
+    if(ev.sport==='surfing'&&!cr.storyFlags.has('meet_sunny')){
+      cr.storyQueue.push('meet_sunny');cr.storyFlags.add('meet_sunny');
+    }
+    initGame(ev.sport);
+    state=ev.sport;
+    sfx.sel();
+  }
+}
+function drawCareerMap(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  T('CHOOSE AN EVENT',W/2,28,'#ffff00',12);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,42,W-40,1);
+  const evs=cr.availableEvents;
+  if(evs.length===0){
+    T('NO EVENTS AVAILABLE',W/2,H/2,'#ff4400',9);
+    T('Earn more REP to unlock higher tiers.',W/2,H/2+22,'#666',7);
+    T('ESC = BACK',W/2,H-14,'#444',6);
+    return;
+  }
+  T('BANK: $'+cr.money+'   FATIGUE: '+cr.fatigue+'%',W/2,56,'#aaa',7);
+  const scrollBase=Math.max(0,cr.mapSel-3);
+  evs.slice(scrollBase,scrollBase+6).forEach((ev,i)=>{
+    const gi=scrollBase+i,y=70+i*48,sel=gi===cr.mapSel;
+    ctx.fillStyle=sel?'#0f0f28':'#080818';
+    ctx.fillRect(16,y,W-32,42);
+    ctx.strokeStyle=sel?'#ffff00':'#222';
+    ctx.lineWidth=1;
+    ctx.strokeRect(16,y,W-32,42);
+    const tierLabels=['ROOKIE','PRO','ELITE','LEGEND'];
+    const tierCols=['#aaa','#ffaa00','#ff6600','#ff00ff'];
+    T('['+tierLabels[ev.tier]+'] '+ev.name,W/2,y+13,sel?'#ffff00':'#aaa',7);
+    T(ev.location,W/2,y+26,sel?'#aaaaff':'#555',6);
+    T('ENTRY: $'+ev.entry+'   PRIZE: $'+ev.prize,W/2,y+39,sel?tierCols[ev.tier]:'#444',6);
+  });
+  if(evs.length>6)T('▼ MORE',W/2,H-22,'#444',6);
+  T('↑↓ SELECT   ENTER COMPETE   ESC BACK',W/2,H-8,'#333',5);
+}
+
+// ── CAREER JOB ────────────────────────────────────────────────────────────────
+function updateCareerJob(){
+  const jobs=cr.availableJobs;
+  if(kp['Escape']){state='careerHub';sfx.sel();return;}
+  if(kp['ArrowUp']){cr.jobSel=(cr.jobSel-1+jobs.length)%jobs.length;sfx.tick();}
+  if(kp['ArrowDown']){cr.jobSel=(cr.jobSel+1)%jobs.length;sfx.tick();}
+  if(kp['Enter']&&jobs.length>0){
+    const job=jobs[cr.jobSel];
+    cr.money+=job.pay;
+    cr.fatigue=Math.min(100,cr.fatigue+job.fatigue);
+    if(job.badHabitRisk>0&&Math.random()*100<job.badHabitRisk){
+      cr.badHabits=Math.min(100,cr.badHabits+20);
+      cr.weekMsg='BAD NIGHT AT THE BAR... (+BAD HABITS)';cr.weekMsgT=3;
+    } else {
+      cr.weekMsg='EARNED $'+job.pay;cr.weekMsgT=2;
+    }
+    _crAdvanceWeek();sfx.score();if(!cr.ended)state='careerHub';
+  }
+}
+function drawCareerJob(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  T('FIND WORK',W/2,28,'#ffff00',12);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,42,W-40,1);
+  T('MONEY: $'+cr.money+'   FATIGUE: '+cr.fatigue+'%',W/2,56,'#aaa',7);
+  const jobs=cr.availableJobs;
+  jobs.forEach((job,i)=>{
+    const y=72+i*54,sel=cr.jobSel===i;
+    ctx.fillStyle=sel?'#0f0f28':'#080818';
+    ctx.fillRect(16,y,W-32,48);
+    ctx.strokeStyle=sel?'#00ff88':'#222';
+    ctx.lineWidth=1;
+    ctx.strokeRect(16,y,W-32,48);
+    T(job.name,W/2,y+13,sel?'#00ff88':'#aaa',9);
+    T(job.desc,W/2,y+27,sel?'#cccccc':'#555',6);
+    T('PAY: $'+job.pay+'  FAT: +'+job.fatigue+(job.badHabitRisk?'  ⚠ RISK':''),W/2,y+41,sel?'#ffaa00':'#444',6);
+  });
+  T('↑↓ SELECT   ENTER TAKE JOB   ESC BACK',W/2,H-8,'#333',5);
+}
+
+// ── CAREER SHOP ───────────────────────────────────────────────────────────────
+function updateCareerShop(){
+  const items=CR_SHOP_ITEMS.filter(it=>!cr.ownedItems.has(it.id)||it.key==='physio'||it.key==='trainer');
+  if(kp['Escape']){state='careerHub';sfx.sel();return;}
+  if(kp['ArrowUp']){cr.shopSel=(cr.shopSel-1+items.length)%items.length;sfx.tick();}
+  if(kp['ArrowDown']){cr.shopSel=(cr.shopSel+1)%items.length;sfx.tick();}
+  if(kp['Enter']&&items.length>0){
+    const item=items[cr.shopSel];
+    if(cr.money<item.cost){cr.weekMsg='NOT ENOUGH MONEY!';cr.weekMsgT=2;state='careerHub';return;}
+    cr.money-=item.cost;
+    if(item.key!=='physio'&&item.key!=='trainer')cr.ownedItems.add(item.id);
+    if(item.key==='physio'){cr.health=Math.min(100,cr.health+30);}
+    else if(item.key==='trainer'){cr.health=Math.min(100,cr.health+20);cr.rep+=10;}
+    else if(item.key.startsWith('home_')){
+      const h=item.key.replace('home_','');
+      cr.home=h;
+      cr.weeklyRent=h==='van'?0:h==='apt'?120:200;
+    }
+    else if(item.key in cr.gear){cr.gear[item.key]=Math.max(cr.gear[item.key],item.tier);}
+    cr.weekMsg='PURCHASED: '+item.name;cr.weekMsgT=2;
+    sfx.score();state='careerHub';
+  }
+}
+function drawCareerShop(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  T('GEAR SHOP',W/2,28,'#ffff00',12);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,42,W-40,1);
+  T('MONEY: $'+cr.money,W/2,56,'#00ff00',7);
+  const items=CR_SHOP_ITEMS.filter(it=>!cr.ownedItems.has(it.id)||it.key==='physio'||it.key==='trainer');
+  const scrollBase=Math.max(0,cr.shopSel-3);
+  items.slice(scrollBase,scrollBase+6).forEach((item,i)=>{
+    const gi=scrollBase+i,y=70+i*48,sel=gi===cr.shopSel;
+    ctx.fillStyle=sel?'#0f0f28':'#080818';
+    ctx.fillRect(16,y,W-32,42);
+    ctx.strokeStyle=sel?'#ffaa00':'#222';
+    ctx.lineWidth=1;
+    ctx.strokeRect(16,y,W-32,42);
+    T(item.name,W/2,y+13,sel?'#ffaa00':'#888',8);
+    T(item.stat,W/2,y+26,sel?'#aaaaff':'#444',6);
+    T('COST: $'+item.cost,W/2,y+39,sel?'#00ff00':'#333',6);
+  });
+  T('↑↓ SELECT   ENTER BUY   ESC BACK',W/2,H-8,'#333',5);
+}
+
+// ── CAREER STANDINGS ─────────────────────────────────────────────────────────
+function updateCareerStandings(){
+  if(kp['Escape']||kp['Enter']){state='careerHub';sfx.sel();}
+}
+function drawCareerStandings(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  T('SEASON '+cr.season+' STANDINGS',W/2,28,'#ffff00',12);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,42,W-40,1);
+  T(CR_TIERS[cr.tier]+' TIER',W/2,56,'#aaaacc',7);
+  _crRefreshStandings();
+  cr.standings.slice(0,10).forEach((s,i)=>{
+    const y=72+i*30,col=s.isPlayer?'#ffff00':(s.col||'#aaaacc');
+    ctx.fillStyle=i%2===0?'#0a0a1e':'#080818';
+    ctx.fillRect(20,y-14,W-40,28);
+    ctx.fillStyle=col;ctx.font='bold 9px monospace';ctx.textAlign='left';
+    ctx.fillText((i+1)+'.',30,y+2);
+    ctx.textAlign='center';ctx.fillText(s.name,W/2,y+2);
+    ctx.textAlign='right';ctx.fillText(s.pts+' PTS',W-30,y+2);
+    ctx.textAlign='left';
+  });
+  T('ESC / ENTER = BACK',W/2,H-12,'#444',6);
+}
+
+// ── CAREER STORY ─────────────────────────────────────────────────────────────
+function updateCareerStory(){
+  if(kp['Enter']||kp['Space']){
+    const scene=CR_STORY_SCENES[cr.storySceneId];
+    if(!scene){state='careerHub';return;}
+    cr.storyPanelIdx++;
+    if(cr.storyPanelIdx>=scene.panels.length){
+      sfx.sel();
+      if(cr.storySceneId==='intro'){state='heroSelect';heroSel=0;}
+      else if(cr.storySceneId==='world_champion'){state='careerEnd';cr.endReason='CHAMPION';}
+      else{state='careerHub';}
+    } else {sfx.tick();}
+  }
+}
+function drawCareerStory(){
+  const scene=CR_STORY_SCENES[cr.storySceneId];
+  if(!scene){return;}
+  const panel=scene.panels[Math.min(cr.storyPanelIdx,scene.panels.length-1)];
+  ctx.fillStyle=panel.bg||'#07071a';ctx.fillRect(0,0,W,H);
+  for(let y=0;y<H;y+=4){ctx.fillStyle='rgba(0,0,0,0.15)';ctx.fillRect(0,y,W,2);}
+  T(scene.title,W/2,26,'#ffff00',10);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,38,W-40,1);
+  // Avatar box
+  ctx.fillStyle='#111';ctx.fillRect(20,48,120,100);
+  ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.strokeRect(20,48,120,100);
+  const char=panel.char;
+  const rival=char!=='player'?CR_RIVALS.find(r=>r.id===char):null;
+  const avatarCol=rival?rival.color:'#00aaff';
+  ctx.fillStyle=avatarCol;
+  ctx.beginPath();ctx.arc(80,84,16,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=0.7;
+  ctx.fillRect(64,102,32,38);
+  ctx.globalAlpha=1;
+  T(char==='player'?player.name:(rival?rival.name.split(' ')[0]:char).toUpperCase(),80,142,avatarCol,5);
+  // Text box
+  ctx.fillStyle='#0a0a1e';ctx.fillRect(20,162,W-40,90);
+  ctx.strokeStyle='#2a2a44';ctx.lineWidth=1;ctx.strokeRect(20,162,W-40,90);
+  // Word-wrap text
+  const words=panel.text.split(' ');
+  const maxW=W-72;
+  let line='',lineY=180;
+  ctx.font='bold 11px monospace';ctx.fillStyle='#eeeeee';ctx.textAlign='center';
+  words.forEach(w=>{
+    const test=line+(line?(' '+w):w);
+    if(ctx.measureText(test).width>maxW&&line){
+      ctx.fillText(line,W/2,lineY);line=w;lineY+=16;
+    } else {line=test;}
+  });
+  if(line)ctx.fillText(line,W/2,lineY);
+  ctx.textAlign='left';
+  // Panel dots
+  scene.panels.forEach((_,i)=>{
+    ctx.fillStyle=i===cr.storyPanelIdx?'#ffff00':'#333';
+    ctx.beginPath();ctx.arc(W/2+((i-Math.floor(scene.panels.length/2))*16),H-14,4,0,Math.PI*2);ctx.fill();
+  });
+  T('ENTER / SPACE — CONTINUE',W/2,H-24,'#444',6);
+}
+
+// ── CAREER EVENT RESULT ───────────────────────────────────────────────────────
+function updateCareerEventResult(){
+  if(kp['Enter']||kp['Space']){
+    cr.eventResult=null;
+    if(cr.storyQueue.length>0){
+      cr.storySceneId=cr.storyQueue.shift();cr.storyPanelIdx=0;
+      state='careerStory';
+    } else {state='careerHub';}
+    sfx.sel();
+  }
+}
+function drawCareerEventResult(){
+  const r=cr.eventResult;
+  if(!r){state='careerHub';return;}
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  const places=['','1ST PLACE!','2ND PLACE','3RD PLACE','DNP'];
+  const placeCols=['','#ffff00','#aaaaff','#ff9900','#666'];
+  const pi=Math.min(r.place,4);
+  T('EVENT RESULT',W/2,26,'#ffff00',12);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(20,40,W-40,1);
+  T(r.eventName,W/2,58,'#ffffff',8);
+  T(places[pi],W/2,88,placeCols[pi],16);
+  ctx.fillStyle='#0a0a1e';ctx.fillRect(28,112,W-56,148);
+  ctx.strokeStyle='#2a2a44';ctx.lineWidth=1;ctx.strokeRect(28,112,W-56,148);
+  T('YOUR SCORE: '+r.score,W/2,130,'#00ff88',8);
+  T(r.rivalName+': '+r.rivalScore,W/2,148,'#ff6666',8);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(36,158,W-72,1);
+  T('PRIZE MONEY: $'+r.prize,W/2,172,'#00ff00',8);
+  T('ENTRY FEE: -$'+r.entryFee,W/2,188,'#ff4400',8);
+  const netCol=r.net>=0?'#00ff00':'#ff0000';
+  T('NET: '+(r.net>=0?'+':'')+r.net,W/2,204,netCol,9);
+  ctx.fillStyle='#2a2a44';ctx.fillRect(36,214,W-72,1);
+  T('REP GAINED: +'+r.repGained+' → '+r.newRep,W/2,228,'#ffaa00',8);
+  T('BANK: $'+r.newMoney,W/2,246,r.newMoney>=0?'#ffffff':'#ff0000',8);
+  T('ENTER — CONTINUE',W/2,H-12,'#444',7);
+}
+
+// ── CAREER END ────────────────────────────────────────────────────────────────
+function updateCareerEnd(){
+  if(kp['Enter']){careerMode=false;state='title';sfx.sel();}
+}
+function drawCareerEnd(){
+  ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
+  for(let y=0;y<H;y+=4){ctx.fillStyle='rgba(0,0,0,0.2)';ctx.fillRect(0,y,W,2);}
+  if(cr.endReason==='CHAMPION'){
+    T('CALIFORNIA GAMES',W/2,48,'#ffff00',14);
+    T('WORLD CHAMPION',W/2,80,'#ff6600',18);
+    T(player.name,W/2,118,'#ffffff',14);
+    T('SEASON '+cr.season+' • '+CR_TIERS[cr.tier],W/2,146,'#aaaacc',8);
+  } else if(cr.endReason==='BROKE'){
+    T('CAREER OVER',W/2,58,'#ff0000',16);
+    T('BROKE AND BROKEN',W/2,96,'#ff4400',10);
+    T('The van was repo\'d. The dream... deferred.',W/2,136,'#888',8);
+  } else {
+    T('CAREER OVER',W/2,58,'#ff4400',16);
+    T('THE BODY GAVE OUT',W/2,96,'#ff6600',10);
+    T('Too many wipeouts. Not enough rest.',W/2,136,'#888',8);
+  }
+  ctx.fillStyle='#0a0a1e';ctx.fillRect(28,162,W-56,128);
+  ctx.strokeStyle='#2a2a44';ctx.lineWidth=1;ctx.strokeRect(28,162,W-56,128);
+  T('FINAL STATS',W/2,180,'#ffff00',9);
+  T('EVENTS WON: '+cr.eventsWon,W/2,198,'#ffffff',8);
+  T('PODIUMS: '+cr.podiums,W/2,214,'#aaaaff',8);
+  T('TOTAL SCORE: '+cr.totalScore,W/2,230,'#00ff88',8);
+  T('REP: '+cr.rep+' ('+CR_TIERS[cr.tier]+')',W/2,246,'#ffaa00',8);
+  T('BANK: $'+cr.money,W/2,262,cr.money>=0?'#00ff00':'#ff0000',8);
+  T('ENTER — TITLE SCREEN',W/2,H-12,'#444',7);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // GAME LOOP
 // ══════════════════════════════════════════════════════════════════════════════
 function initGame(s){
@@ -2952,16 +3563,24 @@ function initGame(s){
 }
 
 const UPDATE={
-  title:updateTitle,profileName:updateProfileName,heroSelect:updateHeroSelect,
-  sponsor:updateSponsor,equipment:updateEquipment,menu:updateMenu,
+  title:updateTitle,profileName:updateProfileName,modeSelect:updateModeSelect,
+  heroSelect:updateHeroSelect,sponsor:updateSponsor,equipment:updateEquipment,menu:updateMenu,
   hackySack:updateHackySack,halfpipe:updateHalfpipe,surfing:updateSurfing,
   bmx:updateBMX,frisbee:updateFrisbee,snowboard:updateSnowboard,
+  careerHub:updateCareerHub,careerMap:updateCareerMap,careerJob:updateCareerJob,
+  careerShop:updateCareerShop,careerStandings:updateCareerStandings,
+  careerStory:updateCareerStory,careerEventResult:updateCareerEventResult,
+  careerEnd:updateCareerEnd,
 };
 const DRAW={
-  title:drawTitle,profileName:drawProfileName,heroSelect:drawHeroSelect,
-  sponsor:drawSponsor,equipment:drawEquipment,menu:drawMenu,
+  title:drawTitle,profileName:drawProfileName,modeSelect:drawModeSelect,
+  heroSelect:drawHeroSelect,sponsor:drawSponsor,equipment:drawEquipment,menu:drawMenu,
   hackySack:drawHackySack,halfpipe:drawHalfpipe,surfing:drawSurfing,
   bmx:drawBMX,frisbee:drawFrisbee,snowboard:drawSnowboard,
+  careerHub:drawCareerHub,careerMap:drawCareerMap,careerJob:drawCareerJob,
+  careerShop:drawCareerShop,careerStandings:drawCareerStandings,
+  careerStory:drawCareerStory,careerEventResult:drawCareerEventResult,
+  careerEnd:drawCareerEnd,
 };
 const IN_GAME=['hackySack','halfpipe','surfing','bmx','frisbee','snowboard'];
 
@@ -2972,14 +3591,15 @@ function loop(ts){
   last=ts;
   if(Object.keys(kp).length>0)ia();
   ctx.clearRect(0,0,W,H);
-  if(IN_GAME.includes(state)&&kp['Escape']){state='menu';ni.style.display='none';}
+  if(IN_GAME.includes(state)&&kp['Escape']){state=careerMode?'careerHub':'menu';ni.style.display='none';}
   UPDATE[state]?.(dt);
   DRAW[state]?.();
   if(actx&&_introStartTime>0&&!IN_GAME.includes(state)&&performance.now()-_introStartTime>=8000)sfx.intro();
   for(const k in kp)delete kp[k];
   document.getElementById('ui').textContent=
     state==='menu'?player.name+' • '+player.sponsor.name+' • ↑↓ select  ENTER play':
-    IN_GAME.includes(state)?'ESC = Main Menu':'';
+    state==='careerHub'?player.name+' • CAREER • $'+cr.money+' • REP:'+cr.rep:
+    IN_GAME.includes(state)?(careerMode?'ESC = Career Hub':'ESC = Main Menu'):'';
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
