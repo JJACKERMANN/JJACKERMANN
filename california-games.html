@@ -130,6 +130,20 @@ const sfx={
     beep(55,0.5,'sawtooth',0.22);
     setTimeout(()=>beep(40,0.35,'sawtooth',0.16),110);
   },
+  hulkSmash:()=>{
+    if(!actx)return;
+    // Vocal grunt: high->low sweep = angry roar
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.type='sawtooth';
+    o.frequency.setValueAtTime(200,actx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(55,actx.currentTime+0.28);
+    g.gain.setValueAtTime(0.35,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.38);
+    o.connect(g);g.connect(actx.destination);
+    o.start();o.stop(actx.currentTime+0.38);
+    // Impact thud underneath
+    setTimeout(()=>{beep(48,0.32,'sawtooth',0.28);},60);
+  },
   powerup:()=>{
     if(!actx)return;
     // Rising energy sweep
@@ -685,13 +699,13 @@ function updateHackySack(dt){
           hk.score+=pts;hk.bonusTxt='SMASH \xd7'+killed+'! +'+pts;hk.bonusTxtT=1.8;sfx.smash();
         } else {sfx.smash();}
       }
-      if(kp['Space']){pw.hulkVy=-420;sfx.jump();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
+      if(kp['Space']){pw.hulkVy=-420;sfx.hulkSmash();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
     } else {
       pw.hulkVy+=560*dt;
       pw.hulkPy+=pw.hulkVy*dt;
       if(pw.hulkPy>=H-78){pw.hulkPy=H-78;}
       // Smash dive
-      if(kp['Space']&&!pw.hulkSmashing&&pw.hulkVy>-100){pw.hulkSmashing=true;pw.hulkVy=580;hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
+      if(kp['Space']&&!pw.hulkSmashing&&pw.hulkVy>-100){pw.hulkSmashing=true;pw.hulkVy=580;sfx.hulkSmash();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
       // Kill zombie gulls on contact while jumping
       pw.zombieGulls.forEach(zg=>{
         if(zg.dead)return;
