@@ -3379,6 +3379,105 @@ function updateCareerShop(){
     sfx.score();state='careerHub';
   }
 }
+function _crShopIcon(key,cx,cy,col){
+  ctx.save();
+  ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=1.5;
+  if(key==='hackySack'){
+    // Hacky sack: circle with pentagon stitches
+    ctx.beginPath();ctx.arc(cx,cy,12,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();
+    for(let i=0;i<5;i++){
+      const a=i/5*Math.PI*2-Math.PI/2;
+      const r=6,ox=cx+Math.cos(a)*r,oy=cy+Math.sin(a)*r;
+      ctx.moveTo(ox,oy);ctx.lineTo(cx+Math.cos(a)*12,cy+Math.sin(a)*12);
+    }
+    ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);ctx.fill();
+  } else if(key==='halfpipe'){
+    // Skateboard: deck + 2 wheels
+    ctx.fillStyle=col;
+    ctx.beginPath();
+    ctx.roundRect(cx-14,cy-4,28,7,3);ctx.fill();
+    ctx.fillStyle='#555';
+    ctx.beginPath();ctx.arc(cx-8,cy+6,4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+8,cy+6,4,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(cx-8,cy+6,2,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+8,cy+6,2,0,Math.PI*2);ctx.fill();
+  } else if(key==='surfing'){
+    // Surfboard: elongated rounded shape with stripe
+    ctx.beginPath();
+    ctx.ellipse(cx,cy,6,14,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,0.4)';
+    ctx.fillRect(cx-6,cy-2,12,4);
+  } else if(key==='bmx'){
+    // BMX bike: two wheels + frame
+    ctx.beginPath();ctx.arc(cx-9,cy+5,6,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.arc(cx+9,cy+5,6,0,Math.PI*2);ctx.stroke();
+    // Frame triangle
+    ctx.beginPath();
+    ctx.moveTo(cx-9,cy+5);ctx.lineTo(cx,cy-6);ctx.lineTo(cx+9,cy+5);
+    ctx.moveTo(cx-9,cy+5);ctx.lineTo(cx+2,cy-2);
+    ctx.stroke();
+    // Handlebar
+    ctx.beginPath();ctx.moveTo(cx,cy-6);ctx.lineTo(cx+4,cy-10);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+4,cy-10);ctx.lineTo(cx+4,cy-7);ctx.stroke();
+    // Seat
+    ctx.beginPath();ctx.moveTo(cx,cy-6);ctx.lineTo(cx-4,cy-9);ctx.stroke();
+  } else if(key==='frisbee'){
+    // Frisbee disc: ellipse with dome
+    ctx.beginPath();ctx.ellipse(cx,cy+2,13,5,0,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(cx,cy-1,8,3,0,Math.PI,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(cx,cy-1,8,3,0,Math.PI,Math.PI*2);ctx.stroke();
+  } else if(key==='snowboard'){
+    // Snowboard: wide rounded plank
+    ctx.beginPath();
+    ctx.roundRect(cx-14,cy-3,28,7,4);ctx.fill();
+    // Bindings
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillRect(cx-8,cy-3,5,7);
+    ctx.fillRect(cx+3,cy-3,5,7);
+    // Tip upturn lines
+    ctx.strokeStyle='rgba(0,0,0,0.6)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(cx-14,cy);ctx.quadraticCurveTo(cx-16,cy-5,cx-14,cy-3);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+14,cy);ctx.quadraticCurveTo(cx+16,cy-5,cx+14,cy-3);ctx.stroke();
+  } else if(key==='home_apt'){
+    // Apartment building
+    ctx.strokeStyle=col;ctx.lineWidth=1.5;
+    ctx.strokeRect(cx-11,cy-10,22,20);
+    // Windows (2x3 grid)
+    ctx.fillStyle=col;ctx.globalAlpha=0.7;
+    [-6,2].forEach(dx=>[-7,-2,3].forEach(dy=>{ctx.fillRect(cx+dx,cy+dy,4,3);}));
+    ctx.globalAlpha=1;
+    // Door
+    ctx.fillRect(cx-3,cy+7,6,3);
+  } else if(key==='home_house'){
+    // House with roof
+    ctx.beginPath();
+    ctx.moveTo(cx-13,cy+10);ctx.lineTo(cx-13,cy);ctx.lineTo(cx,cy-12);ctx.lineTo(cx+13,cy);ctx.lineTo(cx+13,cy+10);ctx.closePath();
+    ctx.stroke();
+    // Door
+    ctx.beginPath();ctx.rect(cx-4,cy+2,8,8);ctx.stroke();
+    // Window
+    ctx.fillStyle=col;ctx.globalAlpha=0.7;ctx.fillRect(cx+4,cy-2,5,5);
+    ctx.globalAlpha=1;ctx.strokeRect(cx+4,cy-2,5,5);
+  } else if(key==='physio'){
+    // Medical cross
+    ctx.fillRect(cx-2,cy-10,4,20);
+    ctx.fillRect(cx-10,cy-2,20,4);
+    // Circle around it
+    ctx.beginPath();ctx.arc(cx,cy,13,0,Math.PI*2);ctx.stroke();
+  } else if(key==='trainer'){
+    // Dumbbell
+    ctx.fillRect(cx-14,cy-2,28,4);
+    ctx.fillRect(cx-16,cy-7,4,14);
+    ctx.fillRect(cx+12,cy-7,4,14);
+    ctx.fillRect(cx-19,cy-5,3,10);
+    ctx.fillRect(cx+16,cy-5,3,10);
+  }
+  ctx.restore();
+}
+
 function drawCareerShop(){
   ctx.fillStyle='#07071a';ctx.fillRect(0,0,W,H);
   T('GEAR SHOP',W/2,28,'#ffff00',12);
@@ -3393,9 +3492,14 @@ function drawCareerShop(){
     ctx.strokeStyle=sel?'#ffaa00':'#222';
     ctx.lineWidth=1;
     ctx.strokeRect(16,y,W-32,42);
-    T(item.name,W/2,y+13,sel?'#ffaa00':'#888',8);
-    T(item.stat,W/2,y+26,sel?'#aaaaff':'#444',6);
-    T('COST: $'+item.cost,W/2,y+39,sel?'#00ff00':'#333',6);
+    // Icon
+    const tierGlow=['#aaaaaa','#ffaa00','#ff6600'][Math.min(item.tier,2)];
+    const iconCol=sel?tierGlow:'#444';
+    _crShopIcon(item.key,50,y+21,iconCol);
+    // Text (shifted right of icon)
+    T(item.name,W/2+14,y+13,sel?'#ffaa00':'#888',8);
+    T(item.stat,W/2+14,y+26,sel?'#aaaaff':'#444',6);
+    T('COST: $'+item.cost,W/2+14,y+39,sel?'#00ff00':'#333',6);
   });
   T('↑↓ SELECT   ENTER BUY   ESC BACK',W/2,H-8,'#333',5);
 }
