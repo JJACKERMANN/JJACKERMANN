@@ -1121,6 +1121,9 @@ function initSurfing(){
     trickText:'', trickTimer:0, combo:0,
     dolphins:[{x:W+60,y:0,ph:0},{x:W+260,y:0,ph:1.5}],
     birds:[{x:80,y:55,ph:0},{x:260,y:40,ph:.7},{x:450,y:70,ph:1.4}],
+    aerial:{active:false,t:0,totalT:1.3,launchY:0,sy:0,rot:0,rotVel:0,spins:0,maxH:80},
+    shark:{spawnT:15,active:false,x:0,y:0,vx:0,vy:0,phase:'idle',chaseT:0,evadeT:0,warnT:0,_evadedScored:false},
+    bonusTxt:'',bonusTxtT:0,
   };
 }
 function updateSurfing(dt){
@@ -1130,70 +1133,144 @@ function updateSurfing(dt){
     if(sf.timer<=0){sf.phase='end';saveHS('surfing',Math.floor(sf.score));sfx.score();return;}}
   sf.wt+=dt; sf.bgScroll+=3.8;
   if(sf.trickTimer>0)sf.trickTimer-=dt;
+  if(sf.bonusTxtT>0)sf.bonusTxtT-=dt;
 
   if(sf.wipeout){
     sf.wipeTimer-=dt;
     if(sf.wipeTimer<=0){sf.wipeout=false;sf.surferY=H*0.5;sf.surferVY=0;sf.rideX=0;sf.rideVX=0;sf.outTimer=0;sf.combo=0;}
-    return;
-  }
-
-  // Dynamic barrel Y (follows wave shape)
-  const tBarY=H*0.42+Math.sin(sf.wt*0.72)*62+Math.sin(sf.wt*1.5)*26;
-  sf.barrelY+=(tBarY-sf.barrelY)*0.055;
-  // Dynamic barrel radius (wave opens/closes)
-  const tR=50+Math.sin(sf.wt*0.85)*13+Math.sin(sf.wt*2.2)*7;
-  sf.barrelR+=(tR-sf.barrelR)*0.05;
-
-  // ↑↓ — vertical position on wave face
-  if(keys['ArrowUp'])   sf.surferVY-=340*dt;
-  if(keys['ArrowDown']) sf.surferVY+=340*dt;
-  sf.surferVY*=0.88;
-  sf.surferY+=sf.surferVY*dt;
-  sf.surferY=Math.max(H*0.1,Math.min(H*0.84,sf.surferY));
-
-  // ← = accelerate into barrel  → = ease off
-  if(keys['ArrowLeft'])  sf.rideVX-=1.52*dt;
-  if(keys['ArrowRight']) sf.rideVX+=1.18*dt;
-  sf.rideVX*=0.90;
-  sf.rideX+=sf.rideVX+0.22*dt;  // wave naturally pushes you forward
-  sf.rideX=Math.max(-1.4,Math.min(1.4,sf.rideX));
-
-  // Direction cue system
-  sf.cueInterval-=dt;
-  if(sf.cueInterval<=0&&!sf.cue){
-    const barrelDY=sf.barrelY-sf.surferY;
-    // Cue matches what the surfer actually needs to do
-    if(Math.abs(barrelDY)>20) sf.cue=barrelDY>0?'ArrowDown':'ArrowUp';
-    else sf.cue=sf.rideX<-0.2?'ArrowLeft':'ArrowRight';
-    sf.cueTimer=1.7; sf.cueSuccess=false;
-    sf.cueInterval=1.5+Math.random()*1.4;
-  }
-  if(sf.cue){
-    sf.cueTimer-=dt;
-    if(kp[sf.cue]){
-      sf.cueSuccess=true;
-      const pts=90*(sf.combo+1)*player.bonus('surfing')|0;
-      sf.score+=pts; sf.combo++;
-      sf.trickText=['PUMP!','TOP TURN!','BOTTOM TURN!','SNAP!'][['ArrowLeft','ArrowUp','ArrowDown','ArrowRight'].indexOf(sf.cue)];
-      sf.trickTimer=1.2; sfx.score();
-    }
-    if(sf.cueTimer<=0||sf.cueSuccess){
-      if(!sf.cueSuccess) sf.combo=Math.max(0,sf.combo-1);
-      sf.cue=null;
-    }
-  }
-
-  // In-barrel check
-  const dy=sf.surferY-sf.barrelY;
-  const dx=sf.rideX*75;
-  sf.inBarrel=Math.sqrt(dx*dx+dy*dy)<sf.barrelR*1.01;
-
-  if(sf.inBarrel){
-    sf.score+=22*dt*player.bonus('surfing')*(1+sf.combo*0.28);
-    sf.outTimer=0;
   } else {
-    sf.outTimer+=dt;
-    if(sf.outTimer>2.8){sf.wipeout=true;sf.wipeTimer=2.2;sf.wipeX=W*0.38+sf.rideX*55;sf.wipeY=sf.surferY;sf.outTimer=0;sfx.oof();}
+    const tBarY=H*0.42+Math.sin(sf.wt*0.72)*62+Math.sin(sf.wt*1.5)*26;
+    sf.barrelY+=(tBarY-sf.barrelY)*0.055;
+    const tR=50+Math.sin(sf.wt*0.85)*13+Math.sin(sf.wt*2.2)*7;
+    sf.barrelR+=(tR-sf.barrelR)*0.05;
+
+    const air=sf.aerial;
+    if(air.active){
+      // ── AIRBORNE ──
+      air.t+=dt;
+      const frac=air.t/air.totalT;
+      air.sy=air.launchY-Math.sin(frac*Math.PI)*air.maxH;
+      if(keys['ArrowLeft'])  air.rotVel-=9*dt;
+      if(keys['ArrowRight']) air.rotVel+=9*dt;
+      air.rotVel*=0.91;
+      air.rot+=air.rotVel;
+      air.spins=Math.floor(Math.abs(air.rot)/(Math.PI*2));
+      sf.outTimer=0;
+      if(air.t>=air.totalT){
+        const ang=((air.rot%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+        const clean=ang<0.55||ang>Math.PI*2-0.55;
+        air.active=false;
+        if(clean){
+          const spinNames=['AIR!','360!','720!','1080!'];
+          const pts=(150+air.spins*220)*player.bonus('surfing')|0;
+          sf.score+=pts;sf.combo++;
+          sf.trickText=spinNames[Math.min(air.spins,3)]||'HUGE AIR!';
+          sf.trickTimer=1.5;sfx.score();
+        } else {
+          sf.wipeout=true;sf.wipeTimer=2.2;
+          sf.wipeX=W*0.38+sf.rideX*55;sf.wipeY=sf.surferY;
+          sf.combo=Math.max(0,sf.combo-1);sfx.oof();
+        }
+      }
+    } else {
+      // ── NORMAL MOVEMENT ──
+      if(keys['ArrowUp'])   sf.surferVY-=340*dt;
+      if(keys['ArrowDown']) sf.surferVY+=340*dt;
+      sf.surferVY*=0.88;
+      sf.surferY+=sf.surferVY*dt;
+      sf.surferY=Math.max(H*0.1,Math.min(H*0.84,sf.surferY));
+      if(keys['ArrowLeft'])  sf.rideVX-=1.52*dt;
+      if(keys['ArrowRight']) sf.rideVX+=1.18*dt;
+      sf.rideVX*=0.90;
+      sf.rideX+=sf.rideVX+0.22*dt;
+      sf.rideX=Math.max(-1.4,Math.min(1.4,sf.rideX));
+
+      // Aerial launch: near lip + moving upward + Space
+      if(kp['Space']&&sf.surferY<H*0.44&&sf.surferVY<-20){
+        air.active=true;air.t=0;air.totalT=1.3+Math.random()*0.2;
+        air.launchY=sf.surferY;air.sy=sf.surferY;
+        air.rot=0;air.rotVel=0;air.spins=0;air.maxH=72+Math.random()*28;
+        sfx.jump();
+      }
+
+      // Direction cue system
+      sf.cueInterval-=dt;
+      if(sf.cueInterval<=0&&!sf.cue){
+        const barrelDY=sf.barrelY-sf.surferY;
+        if(Math.abs(barrelDY)>20) sf.cue=barrelDY>0?'ArrowDown':'ArrowUp';
+        else sf.cue=sf.rideX<-0.2?'ArrowLeft':'ArrowRight';
+        sf.cueTimer=1.7;sf.cueSuccess=false;
+        sf.cueInterval=1.5+Math.random()*1.4;
+      }
+      if(sf.cue){
+        sf.cueTimer-=dt;
+        if(kp[sf.cue]){
+          sf.cueSuccess=true;
+          const pts=90*(sf.combo+1)*player.bonus('surfing')|0;
+          sf.score+=pts;sf.combo++;
+          sf.trickText=['PUMP!','TOP TURN!','BOTTOM TURN!','SNAP!'][['ArrowLeft','ArrowUp','ArrowDown','ArrowRight'].indexOf(sf.cue)];
+          sf.trickTimer=1.2;sfx.score();
+        }
+        if(sf.cueTimer<=0||sf.cueSuccess){if(!sf.cueSuccess)sf.combo=Math.max(0,sf.combo-1);sf.cue=null;}
+      }
+
+      const dy=sf.surferY-sf.barrelY;
+      const dx=sf.rideX*75;
+      sf.inBarrel=Math.sqrt(dx*dx+dy*dy)<sf.barrelR*1.01;
+      if(sf.inBarrel){
+        sf.score+=22*dt*player.bonus('surfing')*(1+sf.combo*0.28);
+        sf.outTimer=0;
+      } else {
+        sf.outTimer+=dt;
+        if(sf.outTimer>2.8){sf.wipeout=true;sf.wipeTimer=2.2;sf.wipeX=W*0.38+sf.rideX*55;sf.wipeY=sf.surferY;sf.outTimer=0;sfx.oof();}
+      }
+    }
+  }
+
+  // ── SHARK ──
+  const sh=sf.shark;
+  if(sh.warnT>0)sh.warnT-=dt;
+  if(!sh.active){
+    sh.spawnT-=dt;
+    if(sh.spawnT<=0){
+      sh.active=true;sh.phase='approach';sh.chaseT=0;sh._evadedScored=false;
+      sh.x=W+80;sh.y=H*0.73;sh.vx=-2.2;sh.vy=0;sh.evadeT=0;
+    }
+  } else {
+    sh.chaseT+=dt;
+    const surX=W*0.38+sf.rideX*55,surY=sf.surferY;
+    if(sh.phase==='approach'){
+      sh.x+=sh.vx;sh.y+=(H*0.73-sh.y)*0.04;
+      if(sh.x<W*0.72){sh.phase='chase';sh.warnT=2.8;}
+    } else if(sh.phase==='chase'){
+      const ddx=surX-sh.x,ddy=surY-sh.y;
+      const dist=Math.sqrt(ddx*ddx+ddy*ddy);
+      const spd=3+Math.min(sh.chaseT*0.5,4);
+      if(dist>1){sh.vx+=(ddx/dist)*spd*dt*5;sh.vy+=(ddy/dist)*spd*dt*5;}
+      sh.vx*=0.91;sh.vy*=0.91;sh.x+=sh.vx;sh.y+=sh.vy;
+      sh.y=Math.max(H*0.58,sh.y);
+      const air=sf.aerial;
+      if(air.active&&dist<240){sh.phase='retreat';sh.evadeT=1;}
+      if(!sf.wipeout&&!air.active&&dist<46){
+        sf.wipeout=true;sf.wipeTimer=2.6;
+        sf.wipeX=sh.x;sf.wipeY=sh.y;
+        sf.combo=Math.max(0,sf.combo-2);sfx.oof();
+        sh.active=false;sh.spawnT=18+Math.random()*6;
+      }
+      if(dist>190){sh.evadeT+=dt;if(sh.evadeT>2.5)sh.phase='retreat';}
+      else sh.evadeT=Math.max(0,sh.evadeT-dt*0.5);
+      if(sh.chaseT>10)sh.phase='retreat';
+    } else if(sh.phase==='retreat'){
+      sh.vx+=(3-sh.vx)*dt*2;sh.vy*=0.88;
+      sh.x+=sh.vx;sh.y+=sh.vy;
+      if(!sh._evadedScored&&sh.evadeT>0){
+        sh._evadedScored=true;
+        const pts=Math.floor(280*player.bonus('surfing'));
+        sf.score+=pts;sf.combo++;
+        sf.bonusTxt='SHARK EVADED! +'+pts;sf.bonusTxtT=2.8;sfx.score();
+      }
+      if(sh.x>W+100){sh.active=false;sh.spawnT=15+Math.random()*7;}
+    }
   }
 
   sf.dolphins.forEach(d=>{d.x-=4.2;d.ph+=dt*3;d.y=H*.77+Math.sin(d.ph)*15;if(d.x<-50)d.x=W+60+Math.random()*180;});
@@ -1280,34 +1357,69 @@ function drawSurfing(){
     ctx.beginPath();ctx.moveTo(d.x-3,d.y-5);ctx.lineTo(d.x+4,d.y-14);ctx.lineTo(d.x+8,d.y-5);ctx.fill();
   });
 
+  // ── SHARK ──
+  {
+    const sh=sf.shark;
+    if(sh.active){
+      const ang=Math.atan2(sh.vy,sh.vx)||0;
+      ctx.save();ctx.translate(sh.x,sh.y);ctx.rotate(ang);
+      ctx.fillStyle='#2e4050';
+      ctx.beginPath();ctx.ellipse(0,0,34,10,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.moveTo(-4,-10);ctx.lineTo(6,-30);ctx.lineTo(18,-10);ctx.closePath();ctx.fill();
+      ctx.beginPath();ctx.moveTo(4,8);ctx.lineTo(22,20);ctx.lineTo(14,10);ctx.closePath();ctx.fill();
+      ctx.beginPath();ctx.moveTo(-34,0);ctx.lineTo(-50,-16);ctx.lineTo(-50,16);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#000';ctx.beginPath();ctx.arc(26,-3,3.5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.7)';ctx.beginPath();ctx.arc(27,-4,1.2,0,Math.PI*2);ctx.fill();
+      const sdx=sh.x-(W*0.38+sf.rideX*55),sdy=sh.y-sf.surferY;
+      if(Math.sqrt(sdx*sdx+sdy*sdy)<140){
+        ctx.fillStyle='#eee';
+        for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(18+i*4,4);ctx.lineTo(20+i*4,11);ctx.lineTo(22+i*4,4);ctx.closePath();ctx.fill();}
+      }
+      ctx.restore();
+    }
+    if(sh.warnT>0){ctx.globalAlpha=Math.min(1,sh.warnT);T('⚠ SHARK!',W/2,H*0.44,'#ff1100',20);ctx.globalAlpha=1;}
+  }
+
   // ── SURFER ──
+  const _surX=W*0.38+sf.rideX*55;
   if(!sf.wipeout){
-    const surX=W*0.38+sf.rideX*55, surY=sf.surferY;
-    const tilt=sf.surferVY*0.004+sf.rideVX*0.28;
+    const surX=_surX;
     const bCol=EQUIP.surfing[player.equip.surfing].col;
-    ctx.save();ctx.translate(surX,surY);ctx.rotate(tilt);
-    ctx.fillStyle=bCol;ctx.beginPath();ctx.ellipse(0,11,32,6,0,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,11,32,6,0,0,Math.PI*2);ctx.stroke();
     const hero=player.hero;
-    // Legs
-    ctx.strokeStyle=hero.color;ctx.lineWidth=2.5;
-    ctx.beginPath();
-    ctx.moveTo(-7,7);ctx.lineTo(-5,0);ctx.moveTo(7,7);ctx.lineTo(5,0);ctx.stroke();
-    // Board shorts
-    ctx.fillStyle=hero.accent;ctx.fillRect(-8,-2,16,7);
-    // Torso
-    ctx.fillStyle=hero.color;
-    ctx.beginPath();ctx.moveTo(-7,-2);ctx.lineTo(7,-2);ctx.lineTo(5,-13);ctx.lineTo(-5,-13);ctx.closePath();ctx.fill();
-    // Arms
-    ctx.strokeStyle=hero.color;ctx.lineWidth=2.5;
-    ctx.beginPath();ctx.moveTo(-15,-5);ctx.lineTo(-5,-11);ctx.moveTo(15,-5);ctx.lineTo(5,-11);ctx.stroke();
-    drawHead(0,-20,7,hero);
-    ctx.restore();
-    // Status hint
-    if(!sf.inBarrel){
-      const hint=sf.outTimer>1.8?'WIPEOUT RISK!':'FIND THE BARREL';
-      const hcol=sf.outTimer>1.8?'#ff3300':'#ffaa00';
-      T(hint,surX,surY-42,hcol,7);
+    const air=sf.aerial;
+    if(air.active){
+      ctx.save();ctx.translate(surX,air.sy);ctx.rotate(air.rot);
+      ctx.fillStyle=bCol;ctx.beginPath();ctx.ellipse(0,10,32,6,0,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,10,32,6,0,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle=hero.accent;ctx.fillRect(-6,1,12,7);
+      ctx.fillStyle=hero.color;ctx.beginPath();ctx.moveTo(-6,1);ctx.lineTo(6,1);ctx.lineTo(4,-11);ctx.lineTo(-4,-11);ctx.closePath();ctx.fill();
+      ctx.strokeStyle=hero.color;ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(-14,-4);ctx.lineTo(-4,-10);ctx.moveTo(14,-4);ctx.lineTo(4,-10);ctx.stroke();
+      drawHead(0,-18,7,hero);
+      ctx.restore();
+      if(air.spins>0)T(air.spins+'\xd7 SPIN!',surX,air.sy-36,'#ffff00',10);
+      T('← → SPIN',surX,H*0.28,'rgba(255,255,100,0.6)',7);
+    } else {
+      const surY=sf.surferY;
+      const tilt=sf.surferVY*0.004+sf.rideVX*0.28;
+      ctx.save();ctx.translate(surX,surY);ctx.rotate(tilt);
+      ctx.fillStyle=bCol;ctx.beginPath();ctx.ellipse(0,11,32,6,0,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,11,32,6,0,0,Math.PI*2);ctx.stroke();
+      ctx.strokeStyle=hero.color;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(-7,7);ctx.lineTo(-5,0);ctx.moveTo(7,7);ctx.lineTo(5,0);ctx.stroke();
+      ctx.fillStyle=hero.accent;ctx.fillRect(-8,-2,16,7);
+      ctx.fillStyle=hero.color;
+      ctx.beginPath();ctx.moveTo(-7,-2);ctx.lineTo(7,-2);ctx.lineTo(5,-13);ctx.lineTo(-5,-13);ctx.closePath();ctx.fill();
+      ctx.strokeStyle=hero.color;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(-15,-5);ctx.lineTo(-5,-11);ctx.moveTo(15,-5);ctx.lineTo(5,-11);ctx.stroke();
+      drawHead(0,-20,7,hero);
+      ctx.restore();
+      if(!sf.inBarrel){
+        const hint=sf.outTimer>1.8?'WIPEOUT RISK!':'FIND THE BARREL';
+        const hcol=sf.outTimer>1.8?'#ff3300':'#ffaa00';
+        T(hint,surX,surY-42,hcol,7);
+      }
+      if(sf.surferY<H*0.44&&sf.inBarrel)T('SPACE → aerial',surX,surY-56,'rgba(255,255,100,0.5)',6);
     }
   } else {
     ctx.fillStyle='#fff';
@@ -1320,7 +1432,8 @@ function drawSurfing(){
   T('COMBO \xD7'+sf.combo,W/2,22,'#ffff00',9);
   T('TIME: '+sf.timer,W-14,22,sf.timer<=10?'#ff3300':'#fff',9,'right');
   if(sf.trickTimer>0){ctx.globalAlpha=Math.min(1,sf.trickTimer);T(sf.trickText+'!',W/2,H/2-28,'#ffff00',14);ctx.globalAlpha=1;}
-  T('↑↓ position on face   ← speed up   → ease off   match the arrow cue!',W/2,H-5,'rgba(255,255,255,0.28)',6);
+  if(sf.bonusTxtT>0){ctx.globalAlpha=Math.min(1,sf.bonusTxtT);T(sf.bonusTxt,W/2,H/2+8,'#ff8800',12);ctx.globalAlpha=1;}
+  T('↑↓ position · ←→ speed · SPACE near lip = aerial (←→ spin)',W/2,H-5,'rgba(255,255,255,0.28)',6);
   if(sf.phase==='end')drawEnd("SURF'S UP!",Math.floor(sf.score),'COMBOS: '+sf.combo,'#44aaff',HS.surfing);
 }
 
