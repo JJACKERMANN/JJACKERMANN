@@ -626,7 +626,7 @@ function initHackySack(){
     gull:{active:false,x:0,y:0,spd:0,dir:1,spawnT:8,wing:0,hit:false,hitT:0,feathers:[]},
     drop:{active:false,x:0,y:0,vy:0,pts:0,rot:0},
     bonusTxt:'',bonusTxtT:0,
-    power:{active:false,timer:0,triggered:false,transforming:false,transformT:0,rings:[],pvx:0,pvy:0,auraT:0,shootCD:0,sacks:[],birds:[],
+    power:{active:false,timer:0,triggered:false,transforming:false,transformT:0,rings:[],pvx:0,pvy:0,auraT:0,shootCD:0,sacks:[],birds:[],ironManDone:false,
       hulkActive:false,hulkTimer:0,hulkTriggered:false,hulkTransforming:false,hulkTransformT:0,hulkScale:1,hulkPy:0,hulkVy:0,hulkSmashing:false,hulkRings:[],zombieGulls:[]}};
 }
 function updateHackySack(dt){
@@ -685,13 +685,13 @@ function updateHackySack(dt){
           hk.score+=pts;hk.bonusTxt='SMASH \xd7'+killed+'! +'+pts;hk.bonusTxtT=1.8;sfx.smash();
         } else {sfx.smash();}
       }
-      if(kp['Space']){pw.hulkVy=-420;sfx.jump();}
+      if(kp['Space']){pw.hulkVy=-420;sfx.jump();hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
     } else {
       pw.hulkVy+=560*dt;
       pw.hulkPy+=pw.hulkVy*dt;
       if(pw.hulkPy>=H-78){pw.hulkPy=H-78;}
       // Smash dive
-      if(kp['Space']&&!pw.hulkSmashing&&pw.hulkVy>-100){pw.hulkSmashing=true;pw.hulkVy=580;}
+      if(kp['Space']&&!pw.hulkSmashing&&pw.hulkVy>-100){pw.hulkSmashing=true;pw.hulkVy=580;hk.bonusTxt='HULK SMASH!';hk.bonusTxtT=0.9;}
       // Kill zombie gulls on contact while jumping
       pw.zombieGulls.forEach(zg=>{
         if(zg.dead)return;
@@ -804,11 +804,11 @@ function updateHackySack(dt){
     pw.birds=pw.birds.filter(b=>!b.dead||b.deadT>0);
 
     if(pw.timer<=0){
-      pw.active=false;hk.py=H-78;hk.px=W/2;
+      pw.active=false;pw.ironManDone=true;hk.py=H-78;hk.px=W/2;
       hk.bx=W/2;hk.by=H-130;hk.bvx=1.8;hk.bvy=-4;
       hk.bonusTxt='POWER DOWN!';hk.bonusTxtT=2.2;
     }
-  } else {
+  } else if(!pw.hulkActive&&!pw.hulkTransforming){
     // ── NORMAL PLAY ───────────────────────────────────────────────────────
     if(keys['ArrowLeft']) hk.px=Math.max(30,hk.px-7);
     if(keys['ArrowRight'])hk.px=Math.min(W-30,hk.px+7);
@@ -830,7 +830,7 @@ function updateHackySack(dt){
       if(hk.combo>=8&&!pw.triggered&&!pw.transforming&&!pw.hulkTransforming&&!pw.hulkActive){
         pw.triggered=true;pw.transforming=true;pw.transformT=1.6;pw.rings=[];
         sfx.powerup();
-      } else if(hk.combo>=8&&pw.triggered&&!pw.active&&!pw.hulkTriggered&&!pw.hulkTransforming&&!pw.hulkActive){
+      } else if(hk.combo>=8&&pw.ironManDone&&!pw.hulkTriggered&&!pw.hulkTransforming&&!pw.hulkActive){
         pw.hulkTriggered=true;pw.hulkTransforming=true;pw.hulkTransformT=2.0;pw.hulkRings=[];
         pw.hulkPy=H-78;pw.hulkVy=0;pw.hulkScale=1;pw.hulkSmashing=false;
         hk.bonusTxt='HULK SMASH!!!';hk.bonusTxtT=3;sfx.hulk();
