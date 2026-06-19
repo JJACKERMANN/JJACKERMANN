@@ -610,11 +610,11 @@ function updateHackySack(dt){
     if(pw.shootCD>0)pw.shootCD-=dt;
 
     // Flight
-    if(keys['ArrowLeft']) pw.pvx-=960*dt;
-    if(keys['ArrowRight'])pw.pvx+=960*dt;
-    if(keys['ArrowUp'])   pw.pvy-=960*dt;
-    if(keys['ArrowDown']) pw.pvy+=960*dt;
-    pw.pvx*=0.90;pw.pvy*=0.90;
+    if(keys['ArrowLeft']) pw.pvx-=2200*dt;
+    if(keys['ArrowRight'])pw.pvx+=2200*dt;
+    if(keys['ArrowUp'])   pw.pvy-=2200*dt;
+    if(keys['ArrowDown']) pw.pvy+=2200*dt;
+    pw.pvx*=0.93;pw.pvy*=0.93;
     hk.px=Math.max(22,Math.min(W-22,hk.px+pw.pvx*dt));
     hk.py=Math.max(55,Math.min(H-40,hk.py+pw.pvy*dt));
 
@@ -649,9 +649,9 @@ function updateHackySack(dt){
       if(b.dead){b.deadT-=dt;b.feathers.forEach(f=>{f.x+=f.vx;f.y+=f.vy;f.vy+=0.2;f.life-=dt;});return;}
       b.ph+=dt*3;
       const ddx=hk.px-b.x,ddy=hk.py-b.y,dd=Math.hypot(ddx,ddy)||1;
-      b.vx+=(ddx/dd)*2.2*dt*10+Math.sin(b.ph+1.5)*0.6;
+      b.vx+=(ddx/dd)*1.0*dt*10+Math.sin(b.ph+1.5)*0.3;
       b.vy+=(ddy/dd)*2.2*dt*10+Math.cos(b.ph)*0.4;
-      b.vx*=0.91;b.vy*=0.91;b.x+=b.vx;b.y+=b.vy;
+      b.vx*=0.84;b.vy*=0.84;b.x+=b.vx;b.y+=b.vy;
       // Sack collision
       for(let si=pw.sacks.length-1;si>=0;si--){
         const s=pw.sacks[si];
