@@ -116,9 +116,9 @@ const sfx={
   intro:()=>{
     if(!actx)return;
     _introStartTime=performance.now();
-    // SAIL-inspired chiptune — E minor, 80 BPM, 12-second loop
-    // 4 bars × 4 beats × 750ms = 12 000ms
-    const Q=750; // quarter note ms
+    // SAIL-inspired chiptune — E minor, 128 BPM, 7.5-second loop
+    // 4 bars × 4 beats × 469ms = 7 500ms
+    const Q=469; // quarter note ms
     // helper: schedule with ghost echo for reverb feel
     const sched=(f,t,d,type,vol)=>{
       _introIds.push(setTimeout(()=>beep(f,d/1000,type,vol),t));
@@ -2116,7 +2116,7 @@ function loop(ts){
   if(IN_GAME.includes(state)&&kp['Escape']){state='menu';ni.style.display='none';}
   UPDATE[state]?.(dt);
   DRAW[state]?.();
-  if(actx&&_introStartTime>0&&!IN_GAME.includes(state)&&performance.now()-_introStartTime>=12000)sfx.intro();
+  if(actx&&_introStartTime>0&&!IN_GAME.includes(state)&&performance.now()-_introStartTime>=7500)sfx.intro();
   for(const k in kp)delete kp[k];
   document.getElementById('ui').textContent=
     state==='menu'?player.name+' • '+player.sponsor.name+' • ↑↓ select  ENTER play':
